@@ -15,9 +15,135 @@ import numpy as np
 import pandas as pd
 import gymnasium as gym
 from gymnasium import spaces
+import joblib
 
-from pinn_training.src.pinn.models.teacher_rf import TeacherRF
-from pinn_training.src.common.features import materialize_features_from_list
+
+class TeacherRF:
+    """Minimal wrapper to load and use RF teacher bundles."""
+    
+    def __init__(
+        self,
+        bundle_path: str | None = None,
+        *,
+        model_path: Path | str | None = None,
+        cache_dir=None,
+        use_cache: bool = False,
+    ):
+        # NOTE: cache_dir/use_cache are accepted for compatibility with older codepaths.
+        _ = cache_dir
+        _ = use_cache
+        if bundle_path is None and model_path is None:
+            raise ValueError("Either bundle_path or model_path must be provided")
+        path = bundle_path if bundle_path is not None else model_path
+        self.bundle = joblib.load(path)
+        self.model = self.bundle["model"]
+        self.feature_columns = self.bundle["feature_columns"]
+        self.target_columns = self.bundle["target_columns"]
+        # Backwards-compatible attribute names used elsewhere in the env
+        self.feature_cols = self.feature_columns
+        self.target_cols = self.target_columns
+    
+    def predict(self, X: pd.DataFrame, return_tensor: bool = False, **kwargs) -> np.ndarray:
+        """Predict using the RF model.
+
+        Args:
+            X: DataFrame of features.
+            return_tensor: Accepted for compatibility; this wrapper always returns numpy.
+            kwargs: Ignored compatibility parameters.
+        """
+        _ = return_tensor
+        _ = kwargs
+        # Ensure columns match
+        if not all(col in X.columns for col in self.feature_columns):
+            raise ValueError(f"Missing features. Expected: {self.feature_columns}")
+        
+        # Select and order features correctly
+        X_ordered = X[self.feature_columns]
+        
+        # Predict
+        pred = self.model.predict(X_ordered)
+        
+        # Ensure (n, n_targets)
+        if isinstance(pred, (list, tuple)):
+            pred = np.asarray(pred)
+        if getattr(pred, "ndim", 0) == 1:
+            pred = np.asarray(pred).reshape(-1, 1)
+        
+        return pred
+
+
+def materialize_features_from_list(
+    history,
+    feature_cols: list,
+    lags: list | None = None,
+) -> pd.DataFrame:
+    """
+    Build feature vector from history buffer with lags.
+    
+    Args:
+        history: List of dicts with keys matching base feature columns
+        feature_cols: Base feature column names (without lags)
+        lags: List of lag values to include
+    
+    Returns:
+        DataFrame with one row containing all features (base + lags)
+    """
+    if history is None:
+        raise ValueError("History buffer is empty")
+
+    # Allow history as DataFrame (preferred) or list[dict]
+    if isinstance(history, pd.DataFrame):
+        if history.empty:
+            raise ValueError("History buffer is empty")
+        rows = history.to_dict("records")
+    else:
+        rows = list(history)
+        if len(rows) == 0:
+            raise ValueError("History buffer is empty")
+
+    # Infer required lags from feature_cols if not provided.
+    # Expected convention: <base>_lagN
+    if lags is None:
+        import re as _re
+        inferred = set()
+        for c in feature_cols:
+            m = _re.search(r"_lag(\d+)$", str(c))
+            if m:
+                inferred.add(int(m.group(1)))
+        lags = sorted(inferred)
+
+    # Determine base feature names (no lag suffix)
+    base_features = set()
+    for c in feature_cols:
+        s = str(c)
+        if "_lag" in s:
+            base_features.add(s.rsplit("_lag", 1)[0])
+        else:
+            base_features.add(s)
+
+    # Build one-row feature dict
+    features: dict = {}
+
+    # Current (most recent)
+    current = rows[-1]
+    for base in base_features:
+        if base in current:
+            features[base] = current[base]
+
+    # Lagged
+    for lag in sorted(lags):
+        if lag >= len(rows):
+            lag_idx = 0
+        else:
+            lag_idx = len(rows) - 1 - lag
+        lag_row = rows[lag_idx]
+        for base in base_features:
+            if base in lag_row:
+                features[f"{base}_lag{lag}"] = lag_row[base]
+
+    # Ensure all requested feature_cols exist and are ordered
+    out = {c: float(features.get(c, 0.0)) for c in feature_cols}
+    return pd.DataFrame([out], columns=feature_cols)
 
 
 class ThermalControlEnvRF(gym.Env):
