@@ -1,0 +1,263 @@
+{
+  "timestamp": "2026-04-05T23:27:20.574615",
+  "source": "C:\\Users\\Pooja_Prasannakumar\\CascadeProjects\\Digital-twin1",
+  "target": "C:\\Users\\Pooja_Prasannakumar\\CascadeProjects\\thermal-adt",
+  "operations": [
+    {
+      "type": "create_structure",
+      "directories": [
+        "data/synthetic/raw",
+        "data/synthetic/processed",
+        "configs/data",
+        "configs/surrogates",
+        "configs/rl",
+        "configs/baselines",
+        "configs/experiments",
+        "src/common",
+        "src/data",
+        "src/surrogates",
+        "src/rl/environments",
+        "src/rl/agents",
+        "src/rl/safety",
+        "src/rl/rewards",
+        "src/baselines",
+        "src/evaluation",
+        "scripts/data",
+        "scripts/training",
+        "scripts/evaluation",
+        "experiments",
+        "results/surrogates",
+        "results/rl_training",
+        "results/experiments",
+        "results/thesis_figures",
+        "notebooks",
+        "docs",
+        "tests",
+        "templates"
+      ]
+    },
+    {
+      "type": "copy",
+      "src": "synthetic_thermal_dataset_v3.csv",
+      "dst": "data/synthetic/raw/synthetic_thermal_dataset_v3.csv",
+      "description": "Raw synthetic thermal dataset"
+    },
+    {
+      "type": "copy",
+      "src": "artifacts/synthetic_gpu_thermal.parquet",
+      "dst": "data/synthetic/processed/synthetic_gpu_thermal.parquet",
+      "description": "Processed synthetic data"
+    },
+    {
+      "type": "copy",
+      "src": "configs/gpu_feature_target_spec.json",
+      "dst": "configs/data/gpu_thermal_spec.json",
+      "description": "GPU thermal data specification"
+    },
+    {
+      "type": "copy",
+      "src": "configs/train_gpu_pinn.yaml",
+      "dst": "configs/surrogates/pinn_lite.yaml",
+      "description": "PINN-lite configuration"
+    },
+    {
+      "type": "copy",
+      "src": "configs/rl_training.yaml",
+      "dst": "configs/rl/sac_shielded.yaml",
+      "description": "SAC with safety shield"
+    },
+    {
+      "type": "copy_dir",
+      "src": "src/common",
+      "dst": "src/common",
+      "description": "Common utilities (features, scalers, metrics)"
+    },
+    {
+      "type": "copy",
+      "src": "src/pinn/models/rollout.py",
+      "dst": "src/surrogates/rollout.py",
+      "description": "Multi-step rollout utilities"
+    },
+    {
+      "type": "copy",
+      "src": "rl/env_thermal_rf.py",
+      "dst": "src/rl/environments/thermal_rf.py",
+      "description": "RF-based thermal environment"
+    },
+    {
+      "type": "copy",
+      "src": "rl/env_thermal.py",
+      "dst": "src/rl/environments/thermal_base.py",
+      "description": "Base thermal environment"
+    },
+    {
+      "type": "copy",
+      "src": "rl/safety_shield.py",
+      "dst": "src/rl/safety/shield.py",
+      "description": "Safety shield implementation"
+    },
+    {
+      "type": "copy",
+      "src": "rl/reward_functions.py",
+      "dst": "src/rl/rewards/thermal_rewards.py",
+      "description": "Thermal reward functions"
+    },
+    {
+      "type": "copy",
+      "src": "rl/agents/sac_agent.py",
+      "dst": "src/rl/agents/sac_agent.py",
+      "description": "SAC agent implementation"
+    },
+    {
+      "type": "copy",
+      "src": "rl/baselines/static_fan.py",
+      "dst": "src/baselines/static_fan.py",
+      "description": "Static fan curve controller"
+    },
+    {
+      "type": "copy",
+      "src": "rl/baselines/threshold.py",
+      "dst": "src/baselines/threshold.py",
+      "description": "Threshold-based controller"
+    },
+    {
+      "type": "copy",
+      "src": "prepare_synthetic_data.py",
+      "dst": "scripts/data/prepare_synthetic_data.py",
+      "description": "Synthetic data preparation"
+    },
+    {
+      "type": "copy",
+      "src": "train_gpu_rf.py",
+      "dst": "scripts/training/train_rf.py",
+      "description": "RF surrogate training"
+    },
+    {
+      "type": "copy",
+      "src": "rl/training/train_sac.py",
+      "dst": "scripts/training/train_sac.py",
+      "description": "SAC agent training"
+    },
+    {
+      "type": "copy",
+      "src": "eval/evaluate_surrogate_simple.py",
+      "dst": "scripts/evaluation/evaluate_surrogate.py",
+      "description": "Surrogate evaluation"
+    },
+    {
+      "type": "copy",
+      "src": "Autonomous_Thermal_Orchestration_ADT_Proposal.md",
+      "dst": "DISSERTATION_PROPOSAL.md",
+      "description": "Dissertation proposal"
+    },
+    {
+      "type": "copy",
+      "src": "TODO.md",
+      "dst": "docs/TODO.md",
+      "description": "Documentation: TODO.md"
+    },
+    {
+      "type": "copy",
+      "src": "SESSION_SUMMARY.md",
+      "dst": "docs/SESSION_SUMMARY.md",
+      "description": "Documentation: SESSION_SUMMARY.md"
+    },
+    {
+      "type": "copy",
+      "src": "WEEK9_FINAL_SUMMARY.md",
+      "dst": "docs/WEEK9_FINAL_SUMMARY.md",
+      "description": "Documentation: WEEK9_FINAL_SUMMARY.md"
+    },
+    {
+      "type": "copy",
+      "src": "WEEK11_12_RL_ENV_COMPLETE.md",
+      "dst": "docs/WEEK11_12_RL_ENV_COMPLETE.md",
+      "description": "Documentation: WEEK11_12_RL_ENV_COMPLETE.md"
+    },
+    {
+      "type": "copy",
+      "src": "RL_Training_Colab.ipynb",
+      "dst": "notebooks/RL_Training_Colab.ipynb",
+      "description": "Colab notebook for RL training (GPU)"
+    },
+    {
+      "type": "copy",
+      "src": "PINN_Training_Colab.ipynb",
+      "dst": "notebooks/PINN_Training_Colab.ipynb",
+      "description": "Colab notebook for PINN training (GPU)"
+    },
+    {
+      "type": "copy_dir",
+      "src": "notebooks",
+      "dst": "notebooks",
+      "description": "Existing notebooks directory (if present)"
+    },
+    {
+      "type": "copy",
+      "src": "templates/experiment_writeup_template.md",
+      "dst": "templates/experiment_writeup_template.md",
+      "description": "Experiment writeup template"
+    },
+    {
+      "type": "copy",
+      "src": "templates/experiment_config_template.yaml",
+      "dst": "templates/experiment_config_template.yaml",
+      "description": "Experiment config template"
+    },
+    {
+      "type": "create",
+      "path": "README.md",
+      "description": "Main README"
+    },
+    {
+      "type": "create",
+      "path": ".gitignore",
+      "description": "Git ignore file"
+    },
+    {
+      "type": "create",
+      "path": "requirements.txt",
+      "description": "Python dependencies"
+    },
+    {
+      "type": "create",
+      "path": "data/synthetic/raw/.gitkeep",
+      "description": "Keep data/synthetic/raw in Git"
+    },
+    {
+      "type": "create",
+      "path": "data/synthetic/processed/.gitkeep",
+      "description": "Keep data/synthetic/processed in Git"
+    },
+    {
+      "type": "create",
+      "path": "results/surrogates/.gitkeep",
+      "description": "Keep results/surrogates in Git"
+    },
+    {
+      "type": "create",
+      "path": "results/rl_training/.gitkeep",
+      "description": "Keep results/rl_training in Git"
+    },
+    {
+      "type": "create",
+      "path": "results/experiments/.gitkeep",
+      "description": "Keep results/experiments in Git"
+    },
+    {
+      "type": "create",
+      "path": "results/thesis_figures/.gitkeep",
+      "description": "Keep results/thesis_figures in Git"
+    },
+    {
+      "type": "create",
+      "path": "notebooks/.gitkeep",
+      "description": "Keep notebooks in Git"
+    },
+    {
+      "type": "create",
+      "path": "tests/.gitkeep",
+      "description": "Keep tests in Git"
+    }
+  ]
+}

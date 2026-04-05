@@ -1,0 +1,156 @@
+# GPU Thermal Forecasting - Hybrid PINN Configuration
+
+data:
+  parquet_path: "artifacts/synthetic_gpu_thermal.parquet"
+  spec_path: "configs/gpu_feature_target_spec.json"
+  feature_columns_path: "artifacts/gpu_feature_columns.json"
+  
+  # Feature engineering (must match official builder)
+  features:
+    base_cols: ["workload_intensity", "gpu_power_w", "ambient_temp_c", "fan_speed_pct"]
+    lags: [1, 3, 5, 10]
+    roll_windows: [3, 6, 12]  # Must match RF training
+    winsorize: true
+    winsor_quantiles: [0.01, 0.99]
+    low_var_threshold: 1.0e-8
+  
+  # k-ahead prediction
+  k_ahead: 10
+  cadence_seconds: 1.0
+  
+  # Splits (time-based)
+  train_frac: 0.7
+  val_frac: 0.15
+  test_frac: 0.15
+  
+  # Target normalization (TRAIN only)
+  normalize_targets: true
+
+teacher:
+  enabled: true
+  model_path: "artifacts/gpu_rf_teacher.pkl"
+  cache_dir: "artifacts/teacher_cache_gpu"
+  use_cache: true
+
+model:
+  # Architecture
+  input_dim: null  # auto-detected from features
+  hidden_dims: [64, 64, 64]  # Smaller network for single target
+  output_dim: null  # auto-detected from targets (1 for GPU temp)
+  activation: "silu"
+  dropout: 0.1
+  
+  # Time embedding (optional)
+  time_embedding:
+    enabled: false
+    method: "sinusoidal"
+    dim: 16
+    n_freqs: 8
+  
+  # Physics head (optional)
+  physics_head:
+    enabled: true
+  
+  # Physics parameters (learnable)
+  init_physics_params:
+    C: 100.0      # Thermal capacity (J/K) - GPU die + heatsink
+    h: 0.05       # Heat transfer coefficient (W/K) - REDUCED 10x
+    beta: -0.03   # Cooling effectiveness - REDUCED 10x
+    gamma: 0.001  # Power-to-heat conversion - REDUCED 10x
+
+training:
+  # Reproducibility
+  seed: 42
+  device: "cuda"  # or "cpu" if no GPU
+  
+  # Optimizer
+  optimizer: "adam"
+  lr_initial: 0.002
+  lr_final: 0.0005
+  weight_decay: 1.0e-5
+  
+  # Scheduler
+  scheduler: "cosine"
+  warmup_epochs: 5
+  
+  # Training
+  batch_size: 64
+  epochs: 100
+  gradient_clip: 1.0
+  num_workers: 0  # DataLoader workers (0 for Windows compatibility)
+  
+  # Early stopping
+  early_stopping:
+    enabled: true
+    patience: 15
+    metric: "val_skill_rmse"  # higher is better
+    mode: "max"
+  
+  # Curriculum phases
+  curriculum:
+    phase1:
+      name: "stabilize"
+      epochs: 30
+      loss_weights:
+        data: 1.0
+        teacher: 0.2
+        physics: 0.0
+        monotonic: 0.0
+        smoothness: 0.05
+    
+    phase2:
+      name: "physics_on"
+      epochs: 40
+      loss_weights:
+        data: 1.0
+        teacher: 0.1
+        physics: 0.0  # Disabled - current temp not in features (exogenous-only)
+        monotonic: 0.05
+        smoothness: 0.05
+    
+    phase3:
+      name: "control_ready"
+      epochs: 30
+      loss_weights:
+        data: 1.0
+        teacher: 0.1
+        physics: 0.0  # Disabled - cannot compute delta_T without current temp
+        monotonic: 0.05
+        smoothness: 0.05
+
+losses:
+  # Physics ODE residual
+  physics:
+    window_size: 10  # Match k_ahead
+    use_load_proxy: true
+    supply_col: "ambient_temp_c"  # GPU dataset uses ambient as reference temp
+    actuator_col: "fan_speed_pct"  # Fan is the cooling actuator
+    load_proxy_col: "gpu_power_w"  # GPU power is the heat source
+  
+  # Monotonic cooling constraint
+  monotonic:
+    actuator_col: "fan_speed_pct"
+    epsilon: 0.01
+    penalty_type: "relu"
+  
+  # Temporal smoothness
+  smoothness:
+    order: 1
+
+output:
+  # Output paths
+  artifacts_dir: "artifacts"
+  metrics_dir: "artifacts/metrics_gpu"
+  plots_dir: "artifacts/plots_gpu"
+  logs_dir: "artifacts/logs_gpu"
+  checkpoint_dir: "artifacts/checkpoints_gpu"
+  
+  save_best: true
+  save_last: true
+  log_interval: 10  # Log every N batches
+  val_interval: 1   # Validate every N epochs
+
+dev_run:
+  enabled: false
+  max_samples: 1000
+  max_epochs: 2

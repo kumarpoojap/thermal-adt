@@ -1,0 +1,170 @@
+# Experiment Configuration Template
+# Copy and customize for each experiment
+
+experiment:
+  name: "Experiment Name"
+  id: "expN"
+  description: "Brief description of what this experiment tests"
+  author: "Pooja"
+  date: "2026-04-05"
+  
+  # Dissertation mapping
+  thesis_section: "X.Y"
+  research_questions:
+    - "RQ1: Question text"
+    - "RQ2: Question text"
+
+# Surrogates to test
+surrogates:
+  - name: "rc"
+    config: "configs/surrogates/rc_model.yaml"
+    enabled: true
+  
+  - name: "rf"
+    config: "configs/surrogates/rf_surrogate.yaml"
+    enabled: true
+  
+  - name: "pinn_lite"
+    config: "configs/surrogates/pinn_lite.yaml"
+    enabled: true
+
+# Controllers/agents to test
+controllers:
+  - name: "SAC (Shielded)"
+    type: "rl"
+    config: "configs/rl/sac_shielded.yaml"
+    enabled: true
+  
+  - name: "SAC (Unshielded)"
+    type: "rl"
+    config: "configs/rl/sac_unshielded.yaml"
+    enabled: false  # Disable if not needed
+  
+  - name: "Static Fan Curve"
+    type: "baseline"
+    config: "configs/baselines/static_fan.yaml"
+    enabled: true
+  
+  - name: "Threshold Controller"
+    type: "baseline"
+    config: "configs/baselines/threshold.yaml"
+    enabled: true
+  
+  - name: "MPC"
+    type: "baseline"
+    config: "configs/baselines/mpc.yaml"
+    enabled: false  # Optional
+
+# Test scenarios
+scenarios:
+  - name: "Nominal"
+    description: "Typical operating conditions"
+    workload_profile: "moderate"
+    workload_range: [30, 60]  # % utilization
+    ambient_temp: 25.0  # °C
+    ambient_std: 1.0
+    episode_length: 300  # steps (5 minutes at 1s cadence)
+    n_episodes: 10
+  
+  - name: "Stress"
+    description: "High stress with workload bursts"
+    workload_profile: "bursty"
+    workload_range: [20, 100]
+    spike_probability: 0.3
+    ambient_temp: 30.0
+    ambient_std: 2.0
+    episode_length: 300
+    n_episodes: 10
+  
+  - name: "Ambient Shift"
+    description: "Sudden ambient temperature change"
+    workload_profile: "moderate"
+    workload_range: [40, 60]
+    ambient_temp: 25.0
+    ambient_shift: 10.0  # +10°C at step 150
+    ambient_shift_step: 150
+    episode_length: 300
+    n_episodes: 10
+
+# Metrics to collect
+metrics:
+  primary:
+    - name: "throttle_events"
+      description: "Number of thermal throttling events"
+      unit: "count"
+      lower_is_better: true
+    
+    - name: "thermal_headroom"
+      description: "Thermal margin below throttle threshold"
+      unit: "°C"
+      aggregation: ["mean", "min"]
+      higher_is_better: true
+    
+    - name: "time_to_cool"
+      description: "Time to recover from thermal spike"
+      unit: "seconds"
+      lower_is_better: true
+  
+  secondary:
+    - name: "energy_usage"
+      description: "Cooling energy proxy (cumulative fan speed)"
+      unit: "arbitrary"
+      lower_is_better: true
+    
+    - name: "control_stability"
+      description: "Action variance (lower = more stable)"
+      unit: "arbitrary"
+      lower_is_better: true
+    
+    - name: "predictive_interventions"
+      description: "Early cooling actions before danger"
+      unit: "count"
+      higher_is_better: true
+
+# Experimental design
+design:
+  seeds: [42, 123, 456]  # Random seeds for reproducibility
+  n_replicates: 3  # Replicates per seed
+  
+  # Statistical testing
+  significance_level: 0.05
+  correction_method: "bonferroni"  # For multiple comparisons
+  
+  # Parallelization
+  parallel: true
+  n_workers: 4
+
+# Output configuration
+output:
+  base_dir: "results/experiments/expN_name"
+  
+  # What to save
+  save_checkpoints: false  # Don't save model checkpoints for experiments
+  save_trajectories: true  # Save full episode trajectories
+  save_metrics: true
+  save_plots: true
+  
+  # Plotting
+  plot_formats: ["png", "pdf"]  # PDF for thesis
+  plot_dpi: 300  # Publication quality
+  
+  # Writeup
+  auto_generate_writeup: true
+  writeup_template: "templates/experiment_writeup_template.md"
+
+# Computational resources
+resources:
+  max_runtime_hours: 24
+  memory_limit_gb: 16
+  gpu_required: false
+  
+  # Checkpointing (for long runs)
+  checkpoint_interval: 3600  # seconds
+  resume_from_checkpoint: true
+
+# Notifications (optional)
+notifications:
+  email: null  # "your.email@example.com"
+  slack_webhook: null
+  on_completion: true
+  on_error: true

@@ -1,0 +1,84 @@
+# RL Training Configuration for Thermal Control
+# SAC agent with curriculum learning and safety shield
+
+# Paths
+rf_model_path: "pinn_training/artifacts/gpu_rf_teacher.pkl"
+save_dir: "rl_artifacts/sac_thermal"
+
+# Environment Configuration
+environment:
+  episode_length: 300  # 5 minutes at 1s cadence
+  temp_throttle: 85.0  # Throttling threshold (°C)
+  temp_target: 75.0    # Target operating temperature (°C)
+  temp_safe: 80.0      # Safe zone upper bound (°C)
+  ambient_mean: 25.0   # Mean ambient temperature (°C)
+  ambient_std: 2.0     # Ambient temperature variation (°C)
+  power_base: 200.0    # Base power consumption (W)
+  power_per_workload: 2.0  # Power increase per % workload (W)
+  
+  # Reward function weights
+  reward_weights:
+    throttle_risk: 10.0   # High penalty for approaching throttle
+    energy: 0.1           # Small penalty for fan usage
+    oscillation: 1.0      # Moderate penalty for rapid changes
+    headroom: 2.0         # Reward for maintaining thermal margin
+
+# Safety Shield Configuration
+safety:
+  fan_min: 20.0          # Minimum fan speed (%)
+  fan_max: 100.0         # Maximum fan speed (%)
+  max_fan_delta: 20.0    # Max fan speed change per step (%)
+  temp_emergency: 88.0   # Emergency override threshold (°C)
+  temp_high: 80.0        # High temperature threshold (°C)
+  temp_fan_map:          # Minimum fan speeds at different temps
+    85.0: 80.0           # At 85°C, min 80% fan
+    80.0: 60.0           # At 80°C, min 60% fan
+    75.0: 40.0           # At 75°C, min 40% fan
+
+# SAC Hyperparameters
+sac:
+  learning_rate: 3.0e-4
+  buffer_size: 100000
+  learning_starts: 1000
+  batch_size: 256
+  tau: 0.005
+  gamma: 0.99
+  train_freq: 1
+  gradient_steps: 1
+  ent_coef: "auto"
+  target_update_interval: 1
+  target_entropy: "auto"
+  use_sde: false
+  policy_kwargs:
+    net_arch: [256, 256]
+
+# Training Configuration
+total_timesteps: 200000  # 200K steps
+n_envs: 1                 # Number of parallel environments
+normalize_env: true       # Normalize observations and rewards
+normalize_obs: true
+normalize_reward: true
+
+# Evaluation Configuration
+eval_freq: 20000          # Evaluate every 20k steps
+n_eval_episodes: 5        # Number of evaluation episodes
+
+# Curriculum Learning
+use_curriculum: true
+initial_workload_profile: "steady"
+curriculum_phases:
+  steady: 0               # 0-50k: Steady workloads (20-40%)
+  moderate: 50000         # 50k-100k: Moderate bursts (30-60%)
+  bursty: 100000          # 100k-150k: Bursty workloads (20-80%)
+  stress: 150000          # 150k+: High stress (50-100%)
+
+# Safety Shield
+use_safety_shield: true   # Enable safety layer
+
+# Logging
+log_interval: 10
+tensorboard_log: "./rl_logs/tensorboard/"
+save_freq: 20000          # Save checkpoint every 20k steps
+
+# Random Seed
+seed: 42

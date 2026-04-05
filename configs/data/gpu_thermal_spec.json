@@ -1,0 +1,22 @@
+{
+  "resample_rule": "1s",
+  "feature_cols": [
+    "workload_intensity",
+    "gpu_power_w",
+    "ambient_temp_c",
+    "fan_speed_pct"
+  ],
+  "target_cols_raw": [
+    "gpu_temp_c"
+  ],
+  "target_cols_normalized": [
+    "gpu_temp_c_norm"
+  ],
+  "notes": [
+    "GPU thermal forecasting dataset",
+    "Features: workload intensity, power draw, ambient temp, fan speed",
+    "Target: GPU temperature (single output)",
+    "Cadence: 1 second",
+    "Physics: T(t+1) = T(t) + (a*P - b*Fan - c*(T - T_amb)) * dt"
+  ]
+}

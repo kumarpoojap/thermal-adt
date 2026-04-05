@@ -1,0 +1,64 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Jupyter
+.ipynb_checkpoints
+*.ipynb_checkpoints
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment
+.env
+.venv
+env/
+venv/
+ENV/
+
+# Results and artifacts (don't commit large files)
+results/*/tensorboard/
+results/*/checkpoints/*.zip
+results/*/model/*.zip
+*.pkl
+*.pth
+*.pt
+!artifacts/gpu_rf_teacher.pkl
+
+# Data (don't commit large datasets)
+data/synthetic/raw/*.csv
+data/synthetic/processed/*.parquet
+!data/synthetic/raw/.gitkeep
+!data/synthetic/processed/.gitkeep
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary
+*.log
+*.tmp
+temp/
+tmp/
