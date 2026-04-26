@@ -11,8 +11,8 @@ data:
   # Feature engineering
   features:
     base_cols: ["workload_intensity", "gpu_power_w", "ambient_temp_c", "fan_speed_pct"]
-    lags: [1, 3, 5, 10]
-    roll_windows: [3, 6, 12]
+    lags: [1, 3, 5]
+    roll_windows: []
     winsorize: true
     winsor_quantiles: [0.01, 0.99]
     low_var_threshold: 1.0e-8
