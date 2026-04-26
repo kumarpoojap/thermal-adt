@@ -35,8 +35,8 @@
 
 ## MPC Baseline
 
-- [ ] Implement lightweight MPC controller for comparison (objective: track temp target, penalize fan effort & rate-of-change; hard constraints for safety).
-- [ ] Integrate into evaluation harness for nominal and stress scenarios.
+- [x] Implement lightweight MPC controller for comparison (objective: track temp target, penalize fan effort & rate-of-change; hard constraints for safety).
+- [x] Integrate into evaluation harness for nominal and stress scenarios.
 
 ## Experiments & Evaluation
 

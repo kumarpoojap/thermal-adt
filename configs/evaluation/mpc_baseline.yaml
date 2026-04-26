@@ -1,0 +1,53 @@
+# MPC Baseline Controller Configuration
+controller_type: mpc
+run_name: mpc_baseline
+
+# Surrogate model for MPC predictions
+surrogate:
+  type: rc
+  thermal_capacity: 100.0
+  heat_transfer_coeff: 0.05
+  cooling_effectiveness: -0.03
+  power_to_heat: 0.01
+  dt: 1.0
+  temp_min: 30.0
+  temp_max: 95.0
+
+# MPC controller parameters
+mpc:
+  horizon: 10              # Prediction horizon (steps)
+  temp_target: 75.0        # Target temperature (°C)
+  temp_max: 85.0           # Maximum allowed temperature (°C)
+  fan_min: 20.0            # Minimum fan speed (%)
+  fan_max: 100.0           # Maximum fan speed (%)
+  max_fan_delta: 20.0      # Maximum fan speed change per step (%)
+  
+  # Objective weights
+  weight_temp: 10.0        # Temperature tracking error weight
+  weight_effort: 0.1       # Fan effort (energy) weight
+  weight_rate: 1.0         # Fan rate-of-change (smoothness) weight
+  
+  dt: 1.0                  # Time step (seconds)
+
+# Environment configuration (for evaluation)
+env:
+  max_steps: 300
+  temp_warning: 80.0
+  temp_critical: 90.0
+  temp_target: 75.0
+  initial_temp_range: [40.0, 60.0]
+  ambient_range: [20.0, 30.0]
+  power_range: [100.0, 300.0]
+  reward_weights:
+    thermal: 10.0
+    energy: 0.1
+    oscillation: 1.0
+    headroom: 2.0
+
+# Safety wrapper (optional for MPC)
+use_safety: false
+safety:
+  temp_max: 85.0
+  fan_min: 20.0
+  fan_max: 100.0
+  enable_shield: false

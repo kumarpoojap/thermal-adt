@@ -1,0 +1,49 @@
+# Evaluation Configuration
+run_name: thermal_control_eval
+output_dir: results/evaluation
+
+# Scenarios to evaluate
+scenarios:
+  - nominal        # Include all nominal scenarios
+  - stress         # Include all stress scenarios
+
+# Evaluation settings
+n_episodes_per_scenario: 5
+save_trajectory: true
+render: false
+
+# Seeds for reproducibility
+seeds: [42, 123, 456, 789, 1011]
+
+# Policies to evaluate
+policies:
+  # MPC baseline
+  - name: mpc_rc
+    type: mpc
+    config_path: configs/evaluation/mpc_baseline.yaml
+    
+  # RL agent (SAC with RC surrogate)
+  # - name: sac_rc
+  #   type: rl
+  #   model_path: runs/rl/sac_rc_baseline/checkpoints/best_model.zip
+  #   config_path: configs/rl/sac_unified_rc.yaml
+  
+  # RL agent (SAC with RF surrogate)
+  # - name: sac_rf
+  #   type: rl
+  #   model_path: runs/rl/sac_rf_baseline/checkpoints/best_model.zip
+  #   config_path: configs/rl/sac_unified_rf.yaml
+
+# Comparison settings
+generate_plots: true
+plot_types:
+  - temperature_tracking
+  - fan_control
+  - reward_comparison
+  - violation_analysis
+
+# Output formats
+save_formats:
+  - csv
+  - json
+  - plots
