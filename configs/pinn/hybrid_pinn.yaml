@@ -1,0 +1,58 @@
+seed: 42
+outdir: results/pinn/hybrid
+
+data:
+  parquet: data/synthetic/thermal_dataset.parquet
+  spec: configs/data/gpu_thermal_spec.json
+  feature_columns: results/validation/rf_test/feature_columns.json
+  base_cols:
+    - workload_intensity
+    - gpu_power_w
+    - ambient_temp_c
+    - fan_speed_pct
+  lags: [1, 3, 5]
+  roll_windows: []
+  k_ahead: 5
+  cadence_seconds: 1.0
+  normalize_targets: true
+  winsorize: true
+  dev_run: false
+
+model:
+  hidden_dim: 256
+  n_layers: 3
+  time_embed_dim: 16
+  dropout: 0.0
+  physics_head: true
+
+teacher:
+  enabled: true
+  path: models/rf_teacher_validation.pkl
+  allow_missing: true
+
+physics:
+  enabled: false
+  supply_col: ambient_temp_c
+  actuator_col: fan_speed_pct
+  use_load_proxy: false
+  window_size: 12
+
+monotonic:
+  enabled: false
+  actuator_col: fan_speed_pct
+  eps: 0.01
+
+smoothness:
+  p: 2
+
+loss_weights:
+  data: 1.0
+  teacher: 0.1
+  physics: 0.0
+  monotonic: 0.0
+  smoothness: 0.0
+
+training:
+  epochs: 20
+  batch_size: 512
+  learning_rate: 0.001
