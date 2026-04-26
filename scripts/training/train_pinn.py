@@ -447,6 +447,10 @@ def main():
     # Save scaler
     if scaler is not None:
         scaler.save(artifacts_dir / "scalers.json")
+
+    # Save feature columns used for training/inference reproducibility
+    with open(artifacts_dir / "feature_columns.json", "w") as f:
+        json.dump(feature_cols, f, indent=2)
     
     # Create dataloaders
     train_loader = DataLoader(
@@ -671,7 +675,10 @@ def main():
                             "model_state_dict": model.state_dict(),
                             "epoch": epoch,
                             "phase": phase_name,
-                            "val_loss": val_metrics["loss"]
+                            "val_loss": val_metrics["loss"],
+                            "config": cfg,
+                            "feature_cols": feature_cols,
+                            "target_cols": target_cols,
                         }, artifacts_dir / "best_model.pt")
                 else:
                     patience_counter += 1
@@ -684,7 +691,10 @@ def main():
         torch.save({
             "model_state_dict": model.state_dict(),
             "epoch": epoch,
-            "phase": phase_name
+            "phase": phase_name,
+            "config": cfg,
+            "feature_cols": feature_cols,
+            "target_cols": target_cols,
         }, artifacts_dir / "last_model.pt")
     
     # Plot loss curves

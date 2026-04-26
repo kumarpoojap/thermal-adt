@@ -1,0 +1,6 @@
+{
+  "total_timesteps": 2000,
+  "surrogate_type": "pinn",
+  "run_name": "sac_pinn_hybrid",
+  "completed_at": "2026-04-26T19:40:33.375762"
+}

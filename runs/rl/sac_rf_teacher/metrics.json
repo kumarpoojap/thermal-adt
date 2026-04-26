@@ -1,0 +1,6 @@
+{
+  "total_timesteps": 2000,
+  "surrogate_type": "rf",
+  "run_name": "sac_rf_teacher",
+  "completed_at": "2026-04-26T19:09:12.224416"
+}

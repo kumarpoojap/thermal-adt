@@ -1,0 +1,6 @@
+{
+  "total_timesteps": 2000,
+  "surrogate_type": "rc",
+  "run_name": "sac_rc_baseline",
+  "completed_at": "2026-04-26T19:03:48.012521"
+}

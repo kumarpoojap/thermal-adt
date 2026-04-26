@@ -1,0 +1,59 @@
+# SAC training with PINN surrogate adapter
+run_name: sac_pinn_hybrid
+output_dir: runs/rl
+
+# Surrogate configuration
+surrogate:
+  type: pinn
+  #model_path: runs/pinn/hybrid/checkpoints/best_model.pt
+  model_path: models/best_pinn_model.pt
+  #device: cuda
+  device: cpu
+  feature_columns_path: results/validation/rf_test/feature_columns.json
+  scalers_path: models/scalers.json
+  strict_features: true
+  input_mean: null  # Will be loaded from checkpoint if available
+  input_std: null
+  output_mean: null
+  output_std: null
+  pinn_config: null  # Will be loaded from checkpoint
+
+# Environment configuration
+env:
+  max_steps: 300
+  temp_warning: 80.0
+  temp_critical: 90.0
+  temp_target: 75.0
+  initial_temp_range: [40.0, 60.0]
+  ambient_range: [20.0, 30.0]
+  power_range: [100.0, 300.0]
+  reward_weights:
+    thermal: 10.0
+    energy: 0.1
+    oscillation: 1.0
+    headroom: 2.0
+
+# Safety wrapper
+use_safety: true
+safety:
+  temp_max: 85.0
+  fan_min: 20.0
+  fan_max: 100.0
+  enable_shield: true
+
+# SAC hyperparameters
+sac:
+  learning_rate: 3.0e-4
+  buffer_size: 100000
+  learning_starts: 1000
+  batch_size: 256
+  tau: 0.005
+  gamma: 0.99
+  train_freq: 1
+  gradient_steps: 1
+
+# Training configuration
+total_timesteps: 2000
+checkpoint_freq: 500
+normalize_obs: true
+normalize_reward: true

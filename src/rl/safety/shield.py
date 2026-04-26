@@ -28,7 +28,16 @@ class SafetyShield:
         Args:
             config: Safety configuration parameters
         """
-        self.config = config or self._default_config()
+        default_cfg = self._default_config()
+        if config:
+            merged = dict(default_cfg)
+            merged.update(config)
+            if "temp_fan_map" in config and isinstance(config.get("temp_fan_map"), dict):
+                base_map = default_cfg.get("temp_fan_map", {})
+                merged["temp_fan_map"] = {**base_map, **config["temp_fan_map"]}
+            self.config = merged
+        else:
+            self.config = default_cfg
         
         # Action constraints
         self.fan_min = self.config["fan_min"]

@@ -2,7 +2,7 @@
 
 ## RL Training
 
-- [ ] Unify surrogate interface so the same Gymnasium env can use RC, RF (TeacherRF), or PINN-lite.
+- [x] Unify surrogate interface so the same Gymnasium env can use RC, RF (TeacherRF), or PINN-lite (implemented + smoke-tested).
   - **Design an interface** (python protocol or abstract class):
     - `reset(seed: Optional[int] = None, init_state: Optional[np.ndarray] = None) -> None`
     - `predict_next(state: np.ndarray, action: np.ndarray) -> float`  (or `step_dynamics(state, action) -> np.ndarray` if returning full next state)
@@ -25,13 +25,13 @@
     - Keep identical for all surrogates to ensure fair ablations.
     - Switch surrogate via config (e.g., `surrogate_type: rc|rf|pinn`, with per-type params).
 
-- [ ] Refactor current `env_thermal_rf.py` to remove RF-specific feature materialization from the Env and move it into `RFAdapter`.
-- [ ] Implement `RCAdapter` using calibrated RC parameters (expose config for R, C, dt; allow per-profile ambient/power modeling).
-- [ ] Implement `PINNAdapter` (load lightweight PINN, handle device, inference, and optional normalization internally).
-- [ ] Add config plumbing to select surrogate and pass its settings (e.g., `configs/rl_training.yaml`).
-- [ ] Add unit tests for each adapter (`predict_next` determinism, shapes, warmup behavior for RF).
-- [ ] Update training and eval scripts to work unchanged when surrogate switches (only config changes).
-- [ ] Document the interface in `RL_IMPLEMENTATION_GUIDE.md` (architecture diagram + example config snippets).
+- [x] Refactor current `env_thermal_rf.py` to remove RF-specific feature materialization from the Env and move it into `RFAdapter`.
+- [x] Implement `RCAdapter` using calibrated RC parameters (expose config for R, C, dt; allow per-profile ambient/power modeling).
+- [x] Implement `PINNAdapter` (load lightweight PINN, handle device, inference, and optional normalization internally).
+- [x] Add config plumbing to select surrogate and pass its settings (e.g., `configs/rl_training.yaml`).
+- [x] Add unit tests for each adapter (`predict_next` determinism, shapes, warmup behavior for RF).
+- [x] Update training and eval scripts to work unchanged when surrogate switches (only config changes).
+- [x] Document the interface in `docs/Unified_Surrogate_Interface.md` (architecture diagram + example config snippets).
 
 ## MPC Baseline
 

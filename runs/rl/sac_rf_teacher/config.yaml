@@ -1,0 +1,45 @@
+checkpoint_freq: 500
+env:
+  ambient_range:
+  - 20.0
+  - 30.0
+  initial_temp_range:
+  - 40.0
+  - 60.0
+  max_steps: 300
+  power_range:
+  - 100.0
+  - 300.0
+  reward_weights:
+    energy: 0.1
+    headroom: 2.0
+    oscillation: 1.0
+    thermal: 10.0
+  temp_critical: 90.0
+  temp_target: 75.0
+  temp_warning: 80.0
+normalize_obs: true
+normalize_reward: true
+output_dir: runs/rl
+run_name: sac_rf_teacher
+sac:
+  batch_size: 256
+  buffer_size: 100000
+  gamma: 0.99
+  gradient_steps: 1
+  learning_rate: 0.0003
+  learning_starts: 1000
+  tau: 0.005
+  train_freq: 1
+safety:
+  enable_shield: true
+  fan_max: 100.0
+  fan_min: 20.0
+  temp_max: 85.0
+surrogate:
+  cache_dir: null
+  model_path: models/rf_teacher_validation.pkl
+  type: rf
+  use_cache: false
+total_timesteps: 2000
+use_safety: true
