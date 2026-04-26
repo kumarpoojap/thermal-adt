@@ -165,6 +165,20 @@ def prepare_k_ahead_data(
     X_val = X_val[keep_cols]
     X_test = X_test[keep_cols]
 
+    # If expected columns file matches as a SET but differs only by ORDER,
+    # reorder to the expected canonical order before validating.
+    try:
+        with open(feature_columns_path, "r") as f:
+            expected_feature_cols = json.load(f)
+        if set(keep_cols) == set(expected_feature_cols) and keep_cols != expected_feature_cols:
+            keep_cols = [c for c in expected_feature_cols if c in keep_cols]
+            X_train = X_train[keep_cols]
+            X_val = X_val[keep_cols]
+            X_test = X_test[keep_cols]
+    except Exception:
+        # Validation below will surface any real issues; don't fail here.
+        pass
+
     print(f"[INFO] Validating feature columns against {feature_columns_path}...")
     is_valid, diff_msgs = validate_feature_columns(keep_cols, feature_columns_path)
     if not is_valid:
