@@ -1,0 +1,3 @@
+target,MAE,RMSE,split
+gpu_temp_c,0.07859404096834258,0.09863642019659496,test_persistence
+__overall__,0.07859404096834258,0.09863642019659496,test_persistence

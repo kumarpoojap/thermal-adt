@@ -1,0 +1,18 @@
+[
+  "workload_intensity",
+  "workload_intensity_lag1",
+  "workload_intensity_lag3",
+  "workload_intensity_lag5",
+  "gpu_power_w",
+  "gpu_power_w_lag1",
+  "gpu_power_w_lag3",
+  "gpu_power_w_lag5",
+  "ambient_temp_c",
+  "ambient_temp_c_lag1",
+  "ambient_temp_c_lag3",
+  "ambient_temp_c_lag5",
+  "fan_speed_pct",
+  "fan_speed_pct_lag1",
+  "fan_speed_pct_lag3",
+  "fan_speed_pct_lag5"
+]

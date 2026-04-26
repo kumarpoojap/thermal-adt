@@ -1,0 +1,66 @@
+{
+  "workload_intensity": {
+    "low": 0.1083,
+    "high": 1.0
+  },
+  "workload_intensity_lag1": {
+    "low": 0.1083,
+    "high": 1.0
+  },
+  "workload_intensity_lag3": {
+    "low": 0.1083,
+    "high": 1.0
+  },
+  "workload_intensity_lag5": {
+    "low": 0.1083,
+    "high": 1.0
+  },
+  "gpu_power_w": {
+    "low": 69.618,
+    "high": 711.4452
+  },
+  "gpu_power_w_lag1": {
+    "low": 69.618,
+    "high": 711.4452
+  },
+  "gpu_power_w_lag3": {
+    "low": 69.618,
+    "high": 711.4452
+  },
+  "gpu_power_w_lag5": {
+    "low": 69.618,
+    "high": 711.4452
+  },
+  "ambient_temp_c": {
+    "low": 23.99,
+    "high": 26.15
+  },
+  "ambient_temp_c_lag1": {
+    "low": 23.99,
+    "high": 26.15
+  },
+  "ambient_temp_c_lag3": {
+    "low": 23.99,
+    "high": 26.15
+  },
+  "ambient_temp_c_lag5": {
+    "low": 23.993199999999998,
+    "high": 26.15
+  },
+  "fan_speed_pct": {
+    "low": 38.0192,
+    "high": 94.1636
+  },
+  "fan_speed_pct_lag1": {
+    "low": 38.0192,
+    "high": 94.1636
+  },
+  "fan_speed_pct_lag3": {
+    "low": 38.0192,
+    "high": 94.14680000000001
+  },
+  "fan_speed_pct_lag5": {
+    "low": 38.0192,
+    "high": 94.13680000000001
+  }
+}

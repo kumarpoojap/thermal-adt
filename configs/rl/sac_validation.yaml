@@ -1,0 +1,67 @@
+# SAC Smoke Test Configuration - Temporary validation only
+# Uses validation RF bundle and separate output directory
+
+# Paths - point to validation artifacts
+rf_model_path: "models/rf_teacher_validation.pkl"
+save_dir: "results/validation/sac_smoke_test"
+
+# Environment Configuration (same as production)
+environment:
+  episode_length: 100  # Shorter for smoke test
+  temp_throttle: 85.0
+  temp_target: 75.0
+  temp_safe: 80.0
+  ambient_mean: 25.0
+  ambient_std: 2.0
+  power_base: 200.0
+  power_per_workload: 2.0
+  
+  reward_weights:
+    throttle_risk: 10.0
+    energy: 0.1
+    oscillation: 1.0
+    headroom: 2.0
+
+# Safety Shield Configuration
+safety:
+  fan_min: 20.0
+  fan_max: 100.0
+  max_fan_delta: 20.0
+  temp_emergency: 88.0
+  temp_high: 80.0
+  temp_fan_map:
+    60: 20
+    70: 30
+    75: 50
+    80: 70
+    85: 90
+
+# SAC Hyperparameters (minimal for smoke test)
+sac:
+  learning_rate: 0.0003
+  buffer_size: 1000  # Tiny buffer for smoke test
+  learning_starts: 50  # Start learning very early
+  batch_size: 32  # Smaller batch
+  tau: 0.005
+  gamma: 0.99
+  train_freq: 1
+  gradient_steps: 1
+  ent_coef: "auto"
+  target_update_interval: 1
+  target_entropy: "auto"
+
+# Training Schedule (minimal smoke test)
+training:
+  total_timesteps: 100  # Ultra-short smoke test
+  eval_freq: 50
+  n_eval_episodes: 2
+  checkpoint_freq: 50
+  log_interval: 10
+  tensorboard_log: "results/validation/sac_smoke_test/tensorboard"
+
+# Curriculum Learning (disabled for smoke test)
+curriculum:
+  enabled: false
+
+# Random seed
+seed: 42
