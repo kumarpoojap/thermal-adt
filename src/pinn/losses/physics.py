@@ -42,9 +42,13 @@ def extract_physics_drivers(
 class PhysicsODELoss(nn.Module):
     """Simple ODE residual loss: encourages predicted temperature to follow a first-order model."""
 
-    def __init__(self, config: Optional[Dict] = None):
+    def __init__(self, config: Optional[Dict] = None, **kwargs):
         super().__init__()
-        self.config = config or {}
+        merged: Dict = {}
+        if config:
+            merged.update(config)
+        merged.update(kwargs)
+        self.config = merged
 
     def forward(
         self,
