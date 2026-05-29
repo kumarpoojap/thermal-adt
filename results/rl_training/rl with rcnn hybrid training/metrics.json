@@ -1,0 +1,6 @@
+{
+  "total_timesteps": 200000,
+  "surrogate_type": "rcnn",
+  "run_name": "sac_rcnn_hybrid",
+  "completed_at": "2026-05-29T15:51:50.595499"
+}
