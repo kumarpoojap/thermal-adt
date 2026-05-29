@@ -1,6 +1,7 @@
 {
   "resample_rule": "1s",
   "feature_cols": [
+    "gpu_temp_c",           
     "workload_intensity",
     "gpu_power_w",
     "ambient_temp_c",

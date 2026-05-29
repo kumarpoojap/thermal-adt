@@ -155,7 +155,7 @@ def plot_feature_importance(model, feature_names: List[str], outpath: str, top_k
     
     plt.figure(figsize=(10, 8))
     plt.barh(np.array(feature_names)[idx][::-1], importances[idx][::-1], color="#2a9d8f")
-    plt.title("Feature Importance (RandomForest)")
+    plt.title("Feature Importance")
     plt.xlabel("Importance")
     plt.tight_layout()
     plt.savefig(outpath, dpi=150)
@@ -256,9 +256,14 @@ def main():
     parser.add_argument("--cadence-s", type=float, default=1.0, help="Time cadence in seconds")
     
     # Model
-    parser.add_argument("--n-estimators", type=int, default=200, help="Number of trees")
-    parser.add_argument("--max-depth", type=int, default=None, help="Max tree depth (None=unlimited)")
+    parser.add_argument("--model-type", choices=["rf", "xgb"], default="rf", help="Model type: RandomForest (rf) or XGBoost (xgb)")
+    parser.add_argument("--n-estimators", type=int, default=200, help="Number of trees/boosting rounds")
+    parser.add_argument("--max-depth", type=int, default=None, help="Max tree depth (None=unlimited for RF; depth for XGB)")
     parser.add_argument("--random-state", type=int, default=42, help="Random seed")
+    # XGBoost-specific (optional)
+    parser.add_argument("--learning-rate", type=float, default=0.05, help="XGBoost learning rate (eta)")
+    parser.add_argument("--subsample", type=float, default=0.8, help="XGBoost subsample")
+    parser.add_argument("--colsample-bytree", type=float, default=0.8, help="XGBoost colsample_bytree")
     
     # Normalization
     parser.add_argument("--normalize-targets", action="store_true", help="Normalize targets using train stats")
@@ -355,19 +360,41 @@ def main():
         y_train, y_val, y_test = y_train_raw, y_val_raw, y_test_raw
     
     # ========================================================================
-    # 4. Train RandomForest
+    # 4. Train Model
     # ========================================================================
     
-    print(f"\n[5/7] Training RandomForest (n_estimators={args.n_estimators}, max_depth={args.max_depth})")
-    rf = RandomForestRegressor(
-        n_estimators=args.n_estimators,
-        max_depth=args.max_depth,
-        n_jobs=-1,
-        random_state=args.random_state,
-        min_samples_leaf=1,
-    )
+    if args.model_type == "rf":
+        print(f"\n[5/7] Training RandomForest (n_estimators={args.n_estimators}, max_depth={args.max_depth})")
+        model = RandomForestRegressor(
+            n_estimators=args.n_estimators,
+            max_depth=args.max_depth,
+            n_jobs=-1,
+            random_state=args.random_state,
+            min_samples_leaf=1,
+        )
+    else:
+        print(f"\n[5/7] Training XGBoost (n_estimators={args.n_estimators}, max_depth={args.max_depth}, lr={args.learning_rate})")
+        try:
+            from xgboost import XGBRegressor
+        except ImportError as e:
+            raise SystemExit("XGBoost not installed. Please install with: pip install xgboost")
+        # Use single-output assumption; if multiple targets, fit one model per column
+        # For simplicity and consistency with existing bundle, require single target
+        if y_train.shape[1] != 1:
+            raise ValueError("XGBoost path currently supports a single target column. Found: %d" % y_train.shape[1])
+        model = XGBRegressor(
+            n_estimators=int(args.n_estimators),
+            max_depth=None if args.max_depth is None else int(args.max_depth),
+            learning_rate=float(args.learning_rate),
+            subsample=float(args.subsample),
+            colsample_bytree=float(args.colsample_bytree),
+            random_state=int(args.random_state),
+            objective="reg:squarederror",
+            tree_method="hist",
+        )
     
-    rf.fit(X_train, y_train)
+    # Fit
+    model.fit(X_train, y_train.values.ravel() if y_train.shape[1] == 1 else y_train)
     print("  ✓ Training complete")
     
     # ========================================================================
@@ -377,9 +404,9 @@ def main():
     print(f"\n[6/7] Evaluating...")
     
     # Predict
-    y_pred_train = pd.DataFrame(rf.predict(X_train), index=y_train.index, columns=y_train.columns)
-    y_pred_val = pd.DataFrame(rf.predict(X_val), index=y_val.index, columns=y_val.columns)
-    y_pred_test = pd.DataFrame(rf.predict(X_test), index=y_test.index, columns=y_test.columns)
+    y_pred_train = pd.DataFrame(model.predict(X_train), index=y_train.index, columns=y_train.columns)
+    y_pred_val = pd.DataFrame(model.predict(X_val), index=y_val.index, columns=y_val.columns)
+    y_pred_test = pd.DataFrame(model.predict(X_test), index=y_test.index, columns=y_test.columns)
     
     # Invert normalization if needed
     if args.normalize_targets:
@@ -430,8 +457,9 @@ def main():
     print(f"  Saved: {baseline_path}")
     
     # Model and metadata
-    joblib.dump(rf, os.path.join(args.output_dir, "model_random_forest.pkl"))
-    print(f"  Saved: {os.path.join(args.output_dir, 'model_random_forest.pkl')}")
+    model_fname = "model_random_forest.pkl" if args.model_type == "rf" else "model_xgboost.pkl"
+    joblib.dump(model, os.path.join(args.output_dir, model_fname))
+    print(f"  Saved: {os.path.join(args.output_dir, model_fname)}")
     
     with open(os.path.join(args.output_dir, "feature_columns.json"), "w") as f:
         json.dump(all_feature_cols, f, indent=2)
@@ -448,12 +476,14 @@ def main():
     
     # Plots
     print("\n  Generating plots...")
-    plot_feature_importance(
-        rf,
-        feature_names=all_feature_cols,
-        outpath=os.path.join(args.output_dir, "feature_importance.png"),
-        top_k=min(40, len(all_feature_cols))
-    )
+    # Feature importance (only if available)
+    if hasattr(model, "feature_importances_"):
+        plot_feature_importance(
+            model,
+            feature_names=all_feature_cols,
+            outpath=os.path.join(args.output_dir, "feature_importance.png"),
+            top_k=min(40, len(all_feature_cols))
+        )
     
     # Plot first target
     one_target = target_cols_raw[0]
@@ -469,7 +499,7 @@ def main():
     # ========================================================================
     
     export_teacher_bundle(
-        model=rf,
+        model=model,
         feature_cols=all_feature_cols,
         target_cols=target_cols_raw,
         target_stats=y_stats,
@@ -484,7 +514,7 @@ def main():
     # ========================================================================
     
     print("\n" + "="*70)
-    print("✓ RF TEACHER TRAINING COMPLETE")
+    print("✓ TEACHER TRAINING COMPLETE")
     print("="*70)
     print(f"\nArtifacts saved to: {args.output_dir}")
     print(f"TeacherRF bundle: {args.bundle_path}")

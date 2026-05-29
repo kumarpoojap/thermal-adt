@@ -1,15 +1,23 @@
 """
-Simplified surrogate model evaluation focusing on one-step accuracy.
+Surrogate model evaluation utilities
 
-For multi-step rollout, we need actual sequence data which isn't available
-in the current k-ahead dataset format. This script focuses on what we can
-measure accurately with the current data.
+This script supports two evaluation modes:
+
+1) One-step evaluation (existing):
+   - Evaluates PINN checkpoint and an RF/XGB Teacher bundle on one-step accuracy
+   - Uses the PINN-style dataset configuration
+
+2) Multi-step rollout evaluation (new):
+   - Evaluates RC, RF/XGB (TeacherRF bundle via RFAdapter), and RC+NN bundles
+   - Uses a raw parquet time series and runs autoregressive rollouts for K steps
+   - Reports MAE per-horizon (step 1..K)
 """
 
 import argparse
 import json
 from pathlib import Path
 from typing import Dict, List
+import sys
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -18,9 +26,23 @@ import torch
 import yaml
 from torch.utils.data import DataLoader
 
+# Ensure repository root (two levels up from scripts/evaluation) is on sys.path
+try:
+    _THIS_FILE = Path(__file__).resolve()
+    _REPO_ROOT = _THIS_FILE.parents[2]
+    if str(_REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(_REPO_ROOT))
+except Exception:
+    pass
+
 from src.pinn.data.dataset_k_ahead import prepare_k_ahead_data
 from src.pinn.models.hybrid_pinn import HybridPINN
 from src.pinn.models.teacher_rf import load_teacher
+from src.rl.surrogates.rc_adapter import RCAdapter
+from src.rl.surrogates.rf_adapter import RFAdapter
+import joblib
+import numpy as np
+import pandas as pd
 
 
 def load_trained_pinn(
@@ -230,11 +252,84 @@ def plot_comparison_bar(
     print(f"[INFO] Saved comparison plot: {save_path}")
 
 
+def _require_cols(df: pd.DataFrame, cols):
+    missing = [c for c in cols if c not in df.columns]
+    if missing:
+        raise ValueError(f"Missing required columns in parquet: {missing}")
+
+
+def _rollout_model(adapter, df: pd.DataFrame, start_indices, steps: int) -> np.ndarray:
+    """Run autoregressive rollout for given adapter over multiple start indices.
+
+    Returns mean absolute error per horizon step (shape [steps]).
+    """
+    errors = []
+    for s in start_indices:
+        # Initialize state from row s
+        temp0 = float(df.loc[s, "gpu_temp_c"]) 
+        amb0 = float(df.loc[s, "ambient_temp_c"]) 
+        pow0 = float(df.loc[s, "gpu_power_w"]) 
+        fan0 = float(df.loc[s, "fan_speed_pct"]) 
+        state = np.array([temp0, amb0, pow0, fan0, 0.0], dtype=float)
+        adapter.reset(init_state=state)
+
+        preds = []
+        trues = []
+        prev_temp = temp0
+        for k in range(steps):
+            # Use recorded action at time s+k (open-loop replay)
+            fan_k = float(df.loc[s + k, "fan_speed_pct"]) if (s + k) in df.index else fan0
+            amb_k = float(df.loc[s + k, "ambient_temp_c"]) if (s + k) in df.index else amb0
+            pow_k = float(df.loc[s + k, "gpu_power_w"]) if (s + k) in df.index else pow0
+            action = np.array([fan_k], dtype=float)
+
+            # Predict next temp
+            next_temp_pred = float(adapter.predict_next(state, action))
+
+            # Ground truth next temp at s+k+1
+            if (s + k + 1) not in df.index:
+                break
+            next_temp_true = float(df.loc[s + k + 1, "gpu_temp_c"]) 
+            preds.append(next_temp_pred)
+            trues.append(next_temp_true)
+
+            # Update state for next step (autoregressive)
+            temp_delta = next_temp_pred - prev_temp
+            state = np.array([next_temp_pred, amb_k, pow_k, fan_k, temp_delta], dtype=float)
+            prev_temp = next_temp_pred
+
+        if len(preds) == steps:
+            errors.append(np.abs(np.array(preds) - np.array(trues)))
+
+    if not errors:
+        return np.full((steps,), np.nan)
+    return np.mean(np.vstack(errors), axis=0)
+
+
 def main():
-    parser = argparse.ArgumentParser(description="Evaluate surrogate models (one-step)")
-    parser.add_argument("--config", type=str, required=True, help="Path to training config")
-    parser.add_argument("--checkpoint", type=str, default="artifacts/best_model.pt", help="PINN checkpoint")
+    parser = argparse.ArgumentParser(description="Evaluate surrogate models (one-step and multi-step)")
+
+    # One-step (existing PINN/RF path)
+    parser.add_argument("--config", type=str, help="Path to PINN training/eval config YAML")
+    parser.add_argument("--checkpoint", type=str, default="artifacts/best_model.pt", help="PINN checkpoint path")
+
+    # Multi-step rollout inputs
+    parser.add_argument("--parquet", type=str, help="Path to raw parquet time-series for rollout")
+    parser.add_argument("--rollout-steps", type=int, nargs="+", default=[], help="Rollout horizons to evaluate, e.g., 10 30")
     parser.add_argument("--output-dir", type=str, default="results/surrogate_eval", help="Output directory")
+
+    # Surrogate selection and paths
+    parser.add_argument("--eval-rc", action="store_true", help="Evaluate RC surrogate (multi-step)")
+    parser.add_argument("--eval-rf", type=str, default=None, help="Path to RF Teacher bundle (joblib)")
+    parser.add_argument("--eval-xgb", type=str, default=None, help="Path to XGB Teacher bundle (joblib)")
+    parser.add_argument("--eval-rcnn", type=str, default=None, help="Path to RC+NN bundle (joblib)")
+
+    # Optional RC params (fallback to sensible defaults)
+    parser.add_argument("--rc-C", type=float, default=100.0)
+    parser.add_argument("--rc-h", type=float, default=0.05)
+    parser.add_argument("--rc-beta", type=float, default=-0.03)
+    parser.add_argument("--rc-gamma", type=float, default=0.01)
+
     args = parser.parse_args()
     
     # Create output directory
@@ -245,6 +340,172 @@ def main():
     print("Surrogate Model Evaluation (One-Step Accuracy)")
     print("="*60)
     
+    # Branch: Multi-step rollout if requested
+    if args.rollout_steps and args.parquet:
+        print("\n" + "="*60)
+        print("Multi-Step Rollout Evaluation")
+        print("="*60)
+
+        # Load raw parquet and prepare an integer index for convenience
+        df = pd.read_parquet(args.parquet).reset_index(drop=True)
+        _require_cols(df, ["gpu_temp_c", "ambient_temp_c", "gpu_power_w", "fan_speed_pct"])
+
+        # Choose start indices from the last 20% of the data (test-like), spaced by 20 samples
+        n = len(df)
+        min_len = max(args.rollout_steps) + 2
+        start = int(n * 0.8)
+        start_indices = [i for i in range(start, n - min_len, 20)]
+        print(f"[INFO] Using {len(start_indices)} start indices for rollouts (test region)")
+
+        results = {}
+        for steps in args.rollout_steps:
+            print(f"\n-- Horizon: {steps} steps --")
+
+            # RC
+            if args.eval_rc:
+                rc = RCAdapter(
+                    thermal_capacity=args.rc_C,
+                    heat_transfer_coeff=args.rc_h,
+                    cooling_effectiveness=args.rc_beta,
+                    power_to_heat=args.rc_gamma,
+                    dt=1.0,
+                )
+                mae_by_h = _rollout_model(rc, df, start_indices, steps)
+                results.setdefault("rc", {})[steps] = mae_by_h.tolist()
+                print(f"  RC   MAE by step: {np.round(mae_by_h, 3)}")
+
+            # RF/XGB via RFAdapter (Teacher bundle agnostic)
+            if args.eval_rf:
+                rf_adapter = RFAdapter(model_path=Path(args.eval_rf))
+                mae_by_h = _rollout_model(rf_adapter, df, start_indices, steps)
+                results.setdefault("rf", {})[steps] = mae_by_h.tolist()
+                print(f"  RF   MAE by step: {np.round(mae_by_h, 3)}")
+
+            if args.eval_xgb:
+                xgb_adapter = RFAdapter(model_path=Path(args.eval_xgb))
+                mae_by_h = _rollout_model(xgb_adapter, df, start_indices, steps)
+                results.setdefault("xgb", {})[steps] = mae_by_h.tolist()
+                print(f"  XGB  MAE by step: {np.round(mae_by_h, 3)}")
+
+            # RC+NN
+            if args.eval_rcnn:
+                from scripts.training.train_rc_nn import ResidualNN, RCNNAdapter as RCNNAdapterEval
+                bundle = joblib.load(args.eval_rcnn)
+                rc = RCAdapter(**bundle["rc_params"])
+                nn_cfg = bundle["nn_config"]
+                nn = ResidualNN(input_dim=nn_cfg["input_dim"], hidden_dims=nn_cfg["hidden_dims"]) 
+                nn.load_state_dict(bundle["nn_state_dict"])
+                rcnn = RCNNAdapterEval(rc_adapter=rc, nn_model=nn, device="cpu", input_mean=bundle["input_mean"], input_std=bundle["input_std"]) 
+                mae_by_h = _rollout_model(rcnn, df, start_indices, steps)
+                results.setdefault("rcnn", {})[steps] = mae_by_h.tolist()
+                print(f"  RC+NN MAE by step: {np.round(mae_by_h, 3)}")
+
+        # Save results JSON and simple plot per model
+        out_json = output_dir / "rollout_metrics.json"
+        with open(out_json, "w") as f:
+            json.dump(results, f, indent=2)
+        print(f"\n[INFO] Saved rollout metrics: {out_json}")
+
+        # Plot per-model MAE vs horizon
+        for model_name, horizons in results.items():
+            for steps, mae_list in horizons.items():
+                fig, ax = plt.subplots(figsize=(7,4))
+                ax.plot(range(1, steps+1), mae_list, marker='o')
+                ax.set_xlabel('Step')
+                ax.set_ylabel('MAE (°C)')
+                ax.set_title(f'{model_name.upper()} rollout MAE (K={steps})')
+                ax.grid(True, alpha=0.3)
+                save_path = output_dir / f"{model_name}_rollout_mae_k{steps}.png"
+                plt.tight_layout()
+                plt.savefig(save_path, dpi=150)
+                plt.close()
+                print(f"  Saved: {save_path}")
+
+        # Combined comparison plots across models for each K
+        if results:
+            unique_horizons = sorted({k for horizons in results.values() for k in horizons.keys()})
+            for steps in unique_horizons:
+                # Line plot: MAE vs step for all models
+                fig, ax = plt.subplots(figsize=(7,4))
+                any_series = False
+                for model_name, horizons in results.items():
+                    mae_list = horizons.get(steps)
+                    if mae_list is None:
+                        continue
+                    ax.plot(range(1, steps+1), mae_list, marker='o', label=model_name.upper())
+                    any_series = True
+                if any_series:
+                    ax.set_xlabel('Step')
+                    ax.set_ylabel('MAE (°C)')
+                    ax.set_title(f'Combined rollout MAE (K={steps})')
+                    ax.grid(True, alpha=0.3)
+                    ax.legend()
+                    save_path = output_dir / f"combined_rollout_mae_k{steps}.png"
+                    plt.tight_layout()
+                    plt.savefig(save_path, dpi=150)
+                    plt.close()
+                    print(f"  Saved: {save_path}")
+
+                # Bar chart: last-step MAE per model
+                labels, values = [], []
+                for model_name, horizons in results.items():
+                    mae_list = horizons.get(steps)
+                    if mae_list is None:
+                        continue
+                    labels.append(model_name.upper())
+                    values.append(float(mae_list[-1]))
+                if labels:
+                    fig, ax = plt.subplots(figsize=(6,4))
+                    ax.bar(labels, values)
+                    ax.set_xlabel('Model')
+                    ax.set_ylabel('MAE at last step (°C)')
+                    ax.set_title(f'Last-step MAE by model (K={steps})')
+                    ax.grid(True, axis='y', alpha=0.3)
+                    save_path = output_dir / f"combined_last_step_mae_k{steps}.png"
+                    plt.tight_layout()
+                    plt.savefig(save_path, dpi=150)
+                    plt.close()
+                    print(f"  Saved: {save_path}")
+
+        # Export CSV summaries
+        tidy_rows = []
+        last_rows = []
+        for model_name, horizons in results.items():
+            for steps, mae_list in horizons.items():
+                for i, mae in enumerate(mae_list, start=1):
+                    tidy_rows.append({
+                        "model": model_name,
+                        "horizon": int(steps),
+                        "step": int(i),
+                        "mae_c": float(mae),
+                    })
+                last_rows.append({
+                    "model": model_name,
+                    "horizon": int(steps),
+                    "mae_last_step_c": float(mae_list[-1])
+                })
+
+        if tidy_rows:
+            tidy_df = pd.DataFrame(tidy_rows)
+            tidy_csv = output_dir / "rollout_mae_tidy.csv"
+            tidy_df.to_csv(tidy_csv, index=False)
+            print(f"[INFO] Saved tidy CSV: {tidy_csv}")
+
+        if last_rows:
+            last_df = pd.DataFrame(last_rows).sort_values(["horizon", "model"])
+            last_csv = output_dir / "rollout_mae_last_step.csv"
+            last_df.to_csv(last_csv, index=False)
+            print(f"[INFO] Saved last-step CSV: {last_csv}")
+
+        print("\n" + "="*60)
+        print("Rollout Evaluation Complete!")
+        print("="*60)
+        return
+
+    # Fallback: one-step PINN/RF evaluation if config is provided
+    if not args.config:
+        raise SystemExit("No rollout requested and no --config provided for one-step evaluation.")
+
     # Load config
     with open(args.config, "r") as f:
         cfg = yaml.safe_load(f)
@@ -293,8 +554,8 @@ def main():
         input_dim, output_dim, hidden_dims, device
     )
     
-    # Load RF teacher
-    print("[INFO] Loading RF teacher...")
+    # Load RF teacher (could be RF or XGB bundle)
+    print("[INFO] Loading Teacher bundle...")
     rf_teacher = load_teacher(
         Path(cfg["teacher"]["model_path"]),
         cache_dir=None,
@@ -314,26 +575,26 @@ def main():
     print(f"[PINN] Absolute °C - MAE: {pinn_metrics['mae_celsius']:.4f}, RMSE: {pinn_metrics['rmse_celsius']:.4f}")
     print(f"[PINN] Samples: {pinn_metrics['n_samples']}")
     
-    # Evaluate RF
+    # Evaluate Teacher bundle
     print("\n" + "="*60)
-    print("Evaluating RF Teacher Model")
+    print("Evaluating Teacher Model (RF/XGB)")
     print("="*60)
     
     rf_metrics = evaluate_rf_teacher(
         rf_teacher, test_loader, feature_cols, scaler, target_cols
     )
     
-    print(f"[RF] Normalized  - MAE: {rf_metrics['mae_normalized']:.4f}, RMSE: {rf_metrics['rmse_normalized']:.4f}")
-    print(f"[RF] Absolute °C - MAE: {rf_metrics['mae_celsius']:.4f}, RMSE: {rf_metrics['rmse_celsius']:.4f}")
-    print(f"[RF] Samples: {rf_metrics['n_samples']}")
+    print(f"[TEACHER] Normalized  - MAE: {rf_metrics['mae_normalized']:.4f}, RMSE: {rf_metrics['rmse_normalized']:.4f}")
+    print(f"[TEACHER] Absolute °C - MAE: {rf_metrics['mae_celsius']:.4f}, RMSE: {rf_metrics['rmse_celsius']:.4f}")
+    print(f"[TEACHER] Samples: {rf_metrics['n_samples']}")
     
     # Save metrics
     metrics_summary = {
         "pinn": pinn_metrics,
-        "rf": rf_metrics,
+        "teacher": rf_metrics,
         "comparison": {
-            "pinn_vs_rf_mae_improvement": float((rf_metrics['mae_celsius'] - pinn_metrics['mae_celsius']) / rf_metrics['mae_celsius'] * 100),
-            "pinn_vs_rf_rmse_improvement": float((rf_metrics['rmse_celsius'] - pinn_metrics['rmse_celsius']) / rf_metrics['rmse_celsius'] * 100)
+            "pinn_vs_teacher_mae_improvement": float((rf_metrics['mae_celsius'] - pinn_metrics['mae_celsius']) / rf_metrics['mae_celsius'] * 100),
+            "pinn_vs_teacher_rmse_improvement": float((rf_metrics['rmse_celsius'] - pinn_metrics['rmse_celsius']) / rf_metrics['rmse_celsius'] * 100)
         }
     }
     
@@ -345,7 +606,7 @@ def main():
     
     # Plot comparison
     plot_comparison_bar(
-        {"pinn": pinn_metrics, "rf": rf_metrics},
+        {"pinn": pinn_metrics, "teacher": rf_metrics},
         output_dir / "model_comparison.png"
     )
     
@@ -355,13 +616,13 @@ def main():
     print(f"Results saved to: {output_dir}")
     print(f"\nKey Findings:")
     print(f"  - PINN MAE: {pinn_metrics['mae_celsius']:.2f}°C")
-    print(f"  - RF MAE: {rf_metrics['mae_celsius']:.2f}°C")
+    print(f"  - TEACHER MAE: {rf_metrics['mae_celsius']:.2f}°C")
     if pinn_metrics['mae_celsius'] < rf_metrics['mae_celsius']:
         improvement = (rf_metrics['mae_celsius'] - pinn_metrics['mae_celsius']) / rf_metrics['mae_celsius'] * 100
-        print(f"  - PINN is {improvement:.1f}% better than RF")
+        print(f"  - PINN is {improvement:.1f}% better than Teacher")
     else:
         degradation = (pinn_metrics['mae_celsius'] - rf_metrics['mae_celsius']) / rf_metrics['mae_celsius'] * 100
-        print(f"  - PINN is {degradation:.1f}% worse than RF (needs more training)")
+        print(f"  - PINN is {degradation:.1f}% worse than Teacher (needs more training)")
 
 
 if __name__ == "__main__":
