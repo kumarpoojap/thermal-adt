@@ -1,0 +1,44 @@
+python scripts/training/train_rf.py \
+  --data data/synthetic/thermal_dataset.parquet \
+  --config configs/data/gpu_thermal_spec.json\
+  --k-ahead 1 \
+  --lags 1 2 3 5 8 13 21 34 \
+  --n-estimators 1000 \
+  --max-depth 40 \
+  --output-dir results/rf_1step_lagsExtended \
+  --bundle-path models/rf_teacher_1step_lagsExt.pkl
+
+
+python scripts/training/train_rf.py \
+  --data data/synthetic/thermal_dataset.parquet \
+  --config configs/data/gpu_thermal_spec.json \
+  --k-ahead 1 \
+  --model-type xgb \
+  --n-estimators 600 \
+  --max-depth 6 \
+  --learning-rate 0.05 \
+  --subsample 0.8 \
+  --colsample-bytree 0.8 \
+  --bundle-path models/xgb_teacher_1step.pkl
+
+
+python scripts/evaluation/evaluate_surrogate.py \
+  --parquet data/synthetic/thermal_dataset.parquet \
+  --rollout-steps 1 10 30 \
+  --eval-rc \
+  --eval-rf models/rf_teacher_1step.pkl \
+  --eval-xgb models/xgb_teacher_1step.pkl \
+  --eval-rcnn models/rc_nn_hybrid.pkl \
+  --output-dir results/surrogate_eval_rollout
+
+
+python scripts/evaluation/policy_eval.py \
+  --eval mpc_rc mpc_rcnn rl_rc rl_rcnn \
+  --rl-rc-model runs/rl/sac_rc_baseline/checkpoints/sac_170000_steps.zip \
+  --rl-rc-vecnorm runs/rl/sac_rc_baseline/checkpoints/sac_vecnormalize_170000_steps.pkl \
+  --rl-rcnn-model runs/rl/sac_rcnn_hybrid/checkpoints/sac_200000_steps.zip \
+  --rl-rcnn-vecnorm runs/rl/sac_rcnn_hybrid/checkpoints/sac_vecnormalize_200000_steps.pkl \
+  --rcnn-bundle models/rc_nn_hybrid.pkl \
+  --horizon 10 \
+  --episodes 10 \
+  --output-dir results/policy_eval
