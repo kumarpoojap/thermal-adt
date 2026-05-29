@@ -11,10 +11,11 @@ from .interface import ThermalSurrogate
 from .rc_adapter import RCAdapter
 from .rf_adapter import RFAdapter
 from .pinn_adapter import PINNAdapter
+from .rcnn_adapter import RCNNAdapter
 
 
 def create_surrogate(
-    surrogate_type: Literal["rc", "rf", "pinn"],
+    surrogate_type: Literal["rc", "rf", "pinn", "rcnn"],
     config: Dict
 ) -> ThermalSurrogate:
     """
@@ -101,8 +102,25 @@ def create_surrogate(
             strict_features=bool(config.get("strict_features", True)),
         )
     
+    elif surrogate_type == "rcnn":
+        # Prefer loading from a serialized bundle
+        bundle_path = config.get("bundle_path") or config.get("model_path")
+        if bundle_path:
+            return RCNNAdapter(bundle_path=Path(bundle_path), device=config.get("device", "cpu"))
+        # Or construct from explicit params
+        rc_params = {
+            "thermal_capacity": config.get("thermal_capacity", 100.0),
+            "heat_transfer_coeff": config.get("heat_transfer_coeff", 0.05),
+            "cooling_effectiveness": config.get("cooling_effectiveness", -0.03),
+            "power_to_heat": config.get("power_to_heat", 0.01),
+            "dt": config.get("dt", 1.0),
+        }
+        # If building from parts, caller must pass a torch model instance paths etc.;
+        # keep API simple by requiring bundle_path in most cases.
+        raise ValueError("RC+NN surrogate requires 'bundle_path' (or 'model_path') pointing to the saved joblib bundle")
+
     else:
         raise ValueError(
             f"Unknown surrogate type: {surrogate_type}. "
-            f"Must be one of: 'rc', 'rf', 'pinn'"
+            f"Must be one of: 'rc', 'rf', 'pinn', 'rcnn'"
         )

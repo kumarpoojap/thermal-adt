@@ -17,10 +17,14 @@ from datetime import datetime
 from pathlib import Path
 
 import yaml
+import pandas as pd
+import matplotlib.pyplot as plt
+import torch
 from stable_baselines3 import SAC
 from stable_baselines3.common.callbacks import BaseCallback, CheckpointCallback
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
+from stable_baselines3.common.logger import configure
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
@@ -48,6 +52,87 @@ class VecNormalizeSaveCallback(BaseCallback):
                 print(f"[INFO] Saved VecNormalize stats at step {self.num_timesteps}")
         return True
 
+
+class DebugStatsCallback(BaseCallback):
+    """Lightweight callback to log optimizer/param stats to a CSV for debugging."""
+    def __init__(self, save_path: Path, log_every: int = 1000):
+        super().__init__()
+        self.save_path = save_path
+        self.log_every = int(log_every)
+        self._rows = []
+
+    def _on_step(self) -> bool:
+        if self.log_every <= 0:
+            return True
+        if (self.num_timesteps % self.log_every) != 0:
+            return True
+
+        try:
+            # Collect parameter norms (actor and critics)
+            actor_norm = 0.0
+            critic0_norm = 0.0
+            critic1_norm = 0.0
+            with torch.no_grad():
+                for p in self.model.actor.parameters():
+                    actor_norm += float((p.data ** 2).sum().sqrt().item())
+                # Critic networks names differ by SB3 version; try common ones
+                qfs = []
+                if hasattr(self.model, "critic"):
+                    qfs.append(self.model.critic)
+                if hasattr(self.model, "critic_target"):
+                    qfs.append(self.model.critic_target)
+                if hasattr(self.model, "critic") and hasattr(self.model.critic, "qf1"):
+                    qfs = [self.model.critic.qf1, getattr(self.model.critic, "qf2", None)]
+                norms = []
+                for q in qfs:
+                    if q is None:
+                        continue
+                    n = 0.0
+                    for p in q.parameters():
+                        n += float((p.data ** 2).sum().sqrt().item())
+                    norms.append(n)
+                if norms:
+                    critic0_norm = norms[0]
+                    critic1_norm = norms[-1]
+
+            # Read last logged losses if available
+            critic_loss = None
+            for k in [
+                "train/critic_loss", "train/qf_loss", "train/qf0_loss", "train/qf1_loss",
+                "train/value_loss"
+            ]:
+                if hasattr(self.model.logger, "name_to_value") and k in self.model.logger.name_to_value:
+                    critic_loss = float(self.model.logger.name_to_value[k])
+                    break
+
+            self._rows.append({
+                "timesteps": int(self.num_timesteps),
+                "actor_param_norm": actor_norm,
+                "critic0_param_norm": critic0_norm,
+                "critic1_param_norm": critic1_norm,
+                "critic_loss": critic_loss if critic_loss is not None else float("nan"),
+            })
+        except Exception:
+            pass
+        return True
+
+    def _on_training_end(self) -> None:
+        try:
+            import pandas as pd
+            if self._rows:
+                df = pd.DataFrame(self._rows)
+            else:
+                df = pd.DataFrame(columns=[
+                    "timesteps",
+                    "actor_param_norm",
+                    "critic0_param_norm",
+                    "critic1_param_norm",
+                    "critic_loss",
+                ])
+            df.to_csv(self.save_path, index=False)
+            print(f"[DEBUG] Saved debug stats to {self.save_path}")
+        except Exception as e:
+            print(f"[WARN] Failed to save debug stats: {e}")
 
 def find_latest_checkpoint(ckpt_dir: Path) -> Path | None:
     """Find latest checkpoint based on step number."""
@@ -80,7 +165,7 @@ def find_replay_buffer(ckpt_path: Path) -> Path | None:
     return rb if rb.exists() else None
 
 
-def make_env(surrogate_config: dict, env_config: dict, safety_config: dict, use_safety: bool = True):
+def make_env(surrogate_config: dict, env_config: dict, safety_config: dict, use_safety: bool = True, monitor_dir: Path | None = None):
     """
     Create a single thermal control environment with unified surrogate.
     
@@ -103,7 +188,11 @@ def make_env(surrogate_config: dict, env_config: dict, safety_config: dict, use_
         config=env_config
     )
     
-    env = Monitor(env)
+    if monitor_dir is not None:
+        monitor_dir.mkdir(parents=True, exist_ok=True)
+        env = Monitor(env, str(monitor_dir))
+    else:
+        env = Monitor(env)
     
     if use_safety:
         env = SafetyWrapper(env, safety_config)
@@ -137,7 +226,7 @@ def main():
     use_safety = config.get("use_safety", True)
 
     print(f"[INFO] Creating environment with {surrogate_config['type'].upper()} surrogate")
-    env = DummyVecEnv([lambda: make_env(surrogate_config, env_config, safety_config, use_safety)])
+    env = DummyVecEnv([lambda: make_env(surrogate_config, env_config, safety_config, use_safety, output_dir / "monitor")])
 
     if config.get("normalize_obs", True):
         vecnorm_path = output_dir / "vecnormalize.pkl"
@@ -192,6 +281,17 @@ def main():
             tensorboard_log=str(output_dir / "tensorboard")
         )
 
+    # Configure logger to write CSV (progress.csv) and TensorBoard scalars
+    log_dir = output_dir / "logs"
+    log_dir.mkdir(exist_ok=True)
+    # SB3 logger API expects 'format_strings' or positional formats list depending on version
+    try:
+        new_logger = configure(folder=str(log_dir), format_strings=["csv", "tensorboard", "stdout"])
+    except TypeError:
+        # Fallback to positional signature: configure(folder, format_strings)
+        new_logger = configure(str(log_dir), ["csv", "tensorboard", "stdout"])
+    model.set_logger(new_logger)
+
     total_timesteps = int(config.get("total_timesteps", 100000))
     
     if latest_ckpt:
@@ -209,6 +309,10 @@ def main():
     )
 
     callbacks = [checkpoint_callback]
+
+    # Attach debug stats callback to verify critic updates during training
+    debug_csv = output_dir / "debug_stats.csv"
+    callbacks.append(DebugStatsCallback(save_path=debug_csv, log_every=int(config.get("debug_log_every", 1000))))
     
     if config.get("normalize_obs", True):
         vecnorm_callback = VecNormalizeSaveCallback(
@@ -248,6 +352,117 @@ def main():
         json.dump(metrics, f, indent=2)
 
     print("[INFO] Training complete!")
+
+    # Auto-generate learning curve PNGs from CSV logger if available
+    progress_csv = log_dir / "progress.csv"
+    try:
+        if progress_csv.exists() and progress_csv.stat().st_size > 0:
+            df = pd.read_csv(progress_csv)
+            # X-axis: total timesteps if present
+            x_key_candidates = [
+                "time/total_timesteps",
+                "time/iterations",
+                "timesteps"
+            ]
+            x_key = next((k for k in x_key_candidates if k in df.columns), None)
+            if x_key is None:
+                x = range(len(df))
+            else:
+                x = df[x_key].values
+
+            # 1) Mean episode reward
+            if "rollout/ep_rew_mean" in df.columns:
+                plt.figure(figsize=(8,4))
+                plt.plot(x, df["rollout/ep_rew_mean"], label="ep_rew_mean")
+                plt.xlabel("timesteps" if x_key is None else x_key)
+                plt.ylabel("mean episode reward")
+                plt.title("Learning Curve: Episode Reward")
+                plt.grid(True, alpha=0.3)
+                plt.tight_layout()
+                plt.savefig(output_dir / "learning_curve_reward.png", dpi=150)
+                plt.close()
+
+            # 2) Episode length
+            if "rollout/ep_len_mean" in df.columns:
+                plt.figure(figsize=(8,4))
+                plt.plot(x, df["rollout/ep_len_mean"], label="ep_len_mean", color="tab:orange")
+                plt.xlabel("timesteps" if x_key is None else x_key)
+                plt.ylabel("mean episode length")
+                plt.title("Learning Curve: Episode Length")
+                plt.grid(True, alpha=0.3)
+                plt.tight_layout()
+                plt.savefig(output_dir / "learning_curve_ep_len.png", dpi=150)
+                plt.close()
+
+            # 3) Loss diagnostics (best-effort)
+            loss_keys = [
+                k for k in [
+                    "train/actor_loss",
+                    "train/critic_loss",
+                    "train/entropy",
+                    "train/ent_coef_loss",
+                    "train/qf_loss",
+                    "train/qf0_loss",
+                    "train/qf1_loss",
+                    "train/value_loss",
+                ] if k in df.columns
+            ]
+            if loss_keys:
+                plt.figure(figsize=(8,4))
+                for k in loss_keys:
+                    plt.plot(x, df[k], label=k)
+                plt.xlabel("timesteps" if x_key is None else x_key)
+                plt.ylabel("loss / metric")
+                plt.title("Learning Diagnostics")
+                plt.legend()
+                plt.grid(True, alpha=0.3)
+                plt.tight_layout()
+                plt.savefig(output_dir / "learning_curve_losses.png", dpi=150)
+                plt.close()
+            print(f"[INFO] Saved learning curves to {output_dir}")
+        else:
+            # Fallback: derive plots from Monitor CSV (per-episode logs)
+            monitor_csv = output_dir / "monitor" / "monitor.csv"
+            if monitor_csv.exists() and monitor_csv.stat().st_size > 0:
+                mdf = pd.read_csv(monitor_csv, comment="#")
+                # Expect columns: r (reward), l (length), t (time)
+                if all(col in mdf.columns for col in ["r", "l"]):
+                    mdf["cum_steps"] = mdf["l"].cumsum()
+                    # Reward curves
+                    plt.figure(figsize=(8,4))
+                    plt.plot(mdf["cum_steps"], mdf["r"], alpha=0.4, label="episode reward")
+                    if len(mdf) >= 5:
+                        plt.plot(mdf["cum_steps"], mdf["r"].rolling(window=5, min_periods=1).mean(),
+                                 color="tab:blue", label="rolling mean (w=5)")
+                    plt.xlabel("timesteps")
+                    plt.ylabel("episode reward")
+                    plt.title("Learning Curve (from monitor): Episode Reward")
+                    plt.legend()
+                    plt.grid(True, alpha=0.3)
+                    plt.tight_layout()
+                    plt.savefig(output_dir / "learning_curve_reward.png", dpi=150)
+                    plt.close()
+
+                    # Episode length curve
+                    plt.figure(figsize=(8,4))
+                    plt.plot(mdf["cum_steps"], mdf["l"], alpha=0.6, color="tab:orange")
+                    if len(mdf) >= 5:
+                        plt.plot(mdf["cum_steps"], mdf["l"].rolling(window=5, min_periods=1).mean(),
+                                 color="tab:red", label="rolling mean (w=5)")
+                    plt.xlabel("timesteps")
+                    plt.ylabel("episode length")
+                    plt.title("Learning Curve (from monitor): Episode Length")
+                    plt.grid(True, alpha=0.3)
+                    plt.tight_layout()
+                    plt.savefig(output_dir / "learning_curve_ep_len.png", dpi=150)
+                    plt.close()
+                    print(f"[INFO] Saved learning curves from monitor.csv to {output_dir}")
+                else:
+                    print(f"[WARN] monitor.csv missing required columns at {monitor_csv}")
+            else:
+                print(f"[WARN] progress.csv not found or empty at {progress_csv} and no usable monitor.csv; skipping PNG export")
+    except Exception as e:
+        print(f"[WARN] Failed to export learning curves: {e}")
 
 
 if __name__ == "__main__":
