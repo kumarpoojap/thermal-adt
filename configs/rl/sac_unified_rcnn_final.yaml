@@ -1,21 +1,21 @@
-# SAC training with RC+NN hybrid surrogate adapter
-run_name: sac_rcnn_hybrid
+# SAC training with RC+NN hybrid surrogate adapter (Final - General Policy)
+run_name: sac_rcnn_final
 output_dir: runs/rl
 
 # Surrogate configuration
 surrogate:
   type: rcnn
-  # Point to the bundle saved by scripts/training/train_rc_nn.py
+  # Path to the RC+NN bundle
   bundle_path: models/rc_nn_hybrid.pkl
-  device: cpu  # or cuda
+  device: auto  # cpu/cuda/auto
 
-# Environment configuration
+# Environment configuration (General policy)
 env:
   max_steps: 300
   temp_warning: 80.0
   temp_critical: 90.0
   temp_target: 75.0
-  initial_temp_range: [80.0, 85.0]
+  initial_temp_range: [40.0, 60.0]
   ambient_range: [20.0, 30.0]
   power_range: [100.0, 300.0]
   reward_weights:
@@ -32,7 +32,7 @@ safety:
   fan_max: 100.0
   enable_shield: true
 
-# SAC hyperparameters
+# SAC hyperparameters (as used in fine-tuned runs)
 sac:
   learning_rate: 2.0e-4
   buffer_size: 100000
@@ -43,7 +43,9 @@ sac:
   train_freq: 1
   gradient_steps: 1
 
-# Training configuration
+# Training configuration (documentation/provenance)
+# Note: Changing this file does not alter an already trained checkpoint.
+# This value reflects the final step count target for the general policy run.
 total_timesteps: 250000
 checkpoint_freq: 10000
 normalize_obs: true
