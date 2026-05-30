@@ -116,7 +116,8 @@ def make_env(surrogate_type: str, surrogate_cfg: dict, env_cfg: dict) -> Thermal
     return env
 
 
-def rollout_episode(policy_env, base_env: ThermalControlEnv, controller, controller_type: str, T: int, amb_sched, pow_sched, seed: int, scenario: str):
+def rollout_episode(policy_env, base_env: ThermalControlEnv, controller, controller_type: str, T: int, amb_sched, pow_sched, seed: int, scenario: str,
+                    temp_warning: float, temp_critical: float):
     # Reset base env with seed for reproducibility
     _obs, _info = base_env.reset(seed=seed)
     # Reset policy env (handles VecNormalize/DummyVecEnv)
@@ -189,13 +190,28 @@ def rollout_episode(policy_env, base_env: ThermalControlEnv, controller, control
 
     df = pd.DataFrame(traj)
     # Metrics
+    warn_series = df["thermal_violation"].astype(bool)
+    crit_series = df["critical_violation"].astype(bool)
+    # Duration (steps above threshold)
+    warn_duration = int(warn_series.sum())
+    crit_duration = int(crit_series.sum())
+    # Entries (count crossings from non-violation to violation)
+    warn_entries = int(((~warn_series.shift(fill_value=False)) & warn_series).sum())
+    crit_entries = int(((~crit_series.shift(fill_value=False)) & crit_series).sum())
+    # Do not count the initial state as an 'entry' if we start hot
+    if len(df) > 0 and df.loc[0, "temp"] > temp_warning:
+        warn_entries = max(0, warn_entries - 1)
+    if len(df) > 0 and df.loc[0, "temp"] > temp_critical:
+        crit_entries = max(0, crit_entries - 1)
     metrics = {
         "episode_length": len(df),
         "mean_temp": float(df["temp"].mean()),
         "max_temp": float(df["temp"].max()),
         "min_temp": float(df["temp"].min()),
-        "violations_warning": int(df["thermal_violation"].sum()),
-        "violations_critical": int(df["critical_violation"].sum()),
+        "violations_warning": warn_duration,
+        "violations_critical": crit_duration,
+        "violations_warning_entries": warn_entries,
+        "violations_critical_entries": crit_entries,
         "mean_fan": float(df["fan"].mean()),
         "sum_fan": float(df["fan"].sum()),
         "fan_smoothness": float(np.abs(np.diff(df["fan"])).mean()) if len(df) > 1 else 0.0,
@@ -389,7 +405,8 @@ def main():
         for scen in scenarios:
             amb_sched, pow_sched = scenario_schedule(scen, base_env.max_steps)
             for ep in range(args.episodes):
-                df_ep, m = rollout_episode(policy_env, base_env, policy, ctype, base_env.max_steps, amb_sched, pow_sched, seed=ep, scenario=scen)
+                df_ep, m = rollout_episode(policy_env, base_env, policy, ctype, base_env.max_steps, amb_sched, pow_sched, seed=ep, scenario=scen,
+                                           temp_warning=base_env.temp_warning, temp_critical=base_env.temp_critical)
                 # Save episode CSV
                 ep_csv = output_dir / "episodes" / f"{tag}_{scen}_ep{ep}.csv"
                 df_ep.to_csv(ep_csv, index=False)
@@ -407,8 +424,9 @@ def main():
     for tag, df_all, _ in all_results:
         g = df_all.groupby("scenario").agg({
             "cumulative_reward": "mean",
-            "violations_warning": "mean",
-            "violations_critical": "mean",
+            # Use 'entries' for crossings (fairer for hot-start), while durations remain in controller CSVs
+            "violations_warning_entries": "mean",
+            "violations_critical_entries": "mean",
             "mean_fan": "mean",
         }).reset_index()
         g.insert(0, "controller", tag)
@@ -417,7 +435,7 @@ def main():
     comb_df.to_csv(output_dir / "combined_per_scenario.csv", index=False)
 
     # Plot combined reward per scenario and other metrics
-    for metric, ylabel in [("cumulative_reward", "Mean Cumulative Reward"), ("mean_fan", "Mean Fan %"), ("violations_warning", "Warn Violations"), ("violations_critical", "Critical Violations")]:
+    for metric, ylabel in [("cumulative_reward", "Mean Cumulative Reward"), ("mean_fan", "Mean Fan %"), ("violations_warning_entries", "Warn Entries"), ("violations_critical_entries", "Critical Entries")]:
         plt.figure(figsize=(12,5))
         scenarios_unique = comb_df["scenario"].unique()
         x = np.arange(len(scenarios_unique))

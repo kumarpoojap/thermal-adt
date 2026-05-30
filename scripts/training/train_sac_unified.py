@@ -241,6 +241,7 @@ def main():
     sac_config = config.get("sac", {})
     
     latest_ckpt = None
+    steps_done_observed = 0
     if args.resume:
         latest_ckpt = find_latest_checkpoint(ckpt_dir)
         if latest_ckpt:
@@ -251,17 +252,52 @@ def main():
                 device=args.device,
                 print_system_info=True
             )
-            
+
             rb_path = find_replay_buffer(latest_ckpt)
             if rb_path and rb_path.exists():
                 print(f"[INFO] Loading replay buffer from {rb_path}")
                 model.load_replay_buffer(str(rb_path))
-            
+
             if config.get("normalize_obs", True) and vecnorm_path.exists():
                 print(f"[INFO] Loading VecNormalize stats from {vecnorm_path}")
                 env = VecNormalize.load(str(vecnorm_path), env)
+
+            # Baseline steps from checkpoint filename
+            steps_done_observed = max(steps_done_observed, checkpoint_step(latest_ckpt))
         else:
             print("[INFO] No checkpoint found, starting fresh")
+
+        # Try to detect if training progressed beyond the latest checkpoint
+        # 1) progress.csv max timesteps
+        try:
+            log_dir = output_dir / "logs"
+            progress_csv = log_dir / "progress.csv"
+            if progress_csv.exists() and progress_csv.stat().st_size > 0:
+                df_prog = pd.read_csv(progress_csv)
+                for k in [
+                    "time/total_timesteps",
+                    "timesteps",
+                    "time/iterations"
+                ]:
+                    if k in df_prog.columns:
+                        steps_done_observed = max(steps_done_observed, int(df_prog[k].max()))
+                        break
+        except Exception:
+            pass
+
+        # 2) metrics.json total_timesteps if present
+        try:
+            metrics_path = output_dir / "metrics.json"
+            if metrics_path.exists():
+                with open(metrics_path, "r") as mf:
+                    mj = json.load(mf)
+                if "total_timesteps" in mj:
+                    steps_done_observed = max(steps_done_observed, int(mj["total_timesteps"]))
+        except Exception:
+            pass
+
+        # 3) Presence of sac_final.zip implies training completed at least to the
+        # last recorded timesteps in logs/metrics; keep steps_done_observed as is.
 
     if latest_ckpt is None:
         print("[INFO] Creating new SAC model")
@@ -294,10 +330,10 @@ def main():
 
     total_timesteps = int(config.get("total_timesteps", 100000))
     
-    if latest_ckpt:
-        steps_done = checkpoint_step(latest_ckpt)
+    if args.resume:
+        steps_done = steps_done_observed
         remaining = max(0, total_timesteps - steps_done)
-        print(f"[INFO] Already trained {steps_done} steps, {remaining} remaining")
+        print(f"[INFO] Already trained ~{steps_done} steps (observed), {remaining} remaining to reach target {total_timesteps}")
         total_timesteps = remaining
 
     checkpoint_callback = CheckpointCallback(
