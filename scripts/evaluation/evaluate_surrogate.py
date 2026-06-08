@@ -258,12 +258,13 @@ def _require_cols(df: pd.DataFrame, cols):
         raise ValueError(f"Missing required columns in parquet: {missing}")
 
 
-def _rollout_model(adapter, df: pd.DataFrame, start_indices, steps: int) -> np.ndarray:
+def _rollout_model(adapter, df: pd.DataFrame, start_indices, steps: int) -> Dict[str, np.ndarray]:
     """Run autoregressive rollout for given adapter over multiple start indices.
 
-    Returns mean absolute error per horizon step (shape [steps]).
+    Returns dictionary with MAE and RMSE per horizon step (each shape [steps]).
     """
-    errors = []
+    abs_errors = []
+    sq_errors = []
     for s in start_indices:
         # Initialize state from row s
         temp0 = float(df.loc[s, "gpu_temp_c"]) 
@@ -299,11 +300,20 @@ def _rollout_model(adapter, df: pd.DataFrame, start_indices, steps: int) -> np.n
             prev_temp = next_temp_pred
 
         if len(preds) == steps:
-            errors.append(np.abs(np.array(preds) - np.array(trues)))
+            errors = np.array(preds) - np.array(trues)
+            abs_errors.append(np.abs(errors))
+            sq_errors.append(errors ** 2)
 
-    if not errors:
-        return np.full((steps,), np.nan)
-    return np.mean(np.vstack(errors), axis=0)
+    if not abs_errors:
+        return {
+            "mae": np.full((steps,), np.nan),
+            "rmse": np.full((steps,), np.nan)
+        }
+    
+    mae = np.mean(np.vstack(abs_errors), axis=0)
+    rmse = np.sqrt(np.mean(np.vstack(sq_errors), axis=0))
+    
+    return {"mae": mae, "rmse": rmse}
 
 
 def main():
@@ -370,22 +380,34 @@ def main():
                     power_to_heat=args.rc_gamma,
                     dt=1.0,
                 )
-                mae_by_h = _rollout_model(rc, df, start_indices, steps)
-                results.setdefault("rc", {})[steps] = mae_by_h.tolist()
-                print(f"  RC   MAE by step: {np.round(mae_by_h, 3)}")
+                metrics = _rollout_model(rc, df, start_indices, steps)
+                results.setdefault("rc", {})[steps] = {
+                    "mae": metrics["mae"].tolist(),
+                    "rmse": metrics["rmse"].tolist()
+                }
+                print(f"  RC   MAE by step:  {np.round(metrics['mae'], 3)}")
+                print(f"  RC   RMSE by step: {np.round(metrics['rmse'], 3)}")
 
             # RF/XGB via RFAdapter (Teacher bundle agnostic)
             if args.eval_rf:
                 rf_adapter = RFAdapter(model_path=Path(args.eval_rf))
-                mae_by_h = _rollout_model(rf_adapter, df, start_indices, steps)
-                results.setdefault("rf", {})[steps] = mae_by_h.tolist()
-                print(f"  RF   MAE by step: {np.round(mae_by_h, 3)}")
+                metrics = _rollout_model(rf_adapter, df, start_indices, steps)
+                results.setdefault("rf", {})[steps] = {
+                    "mae": metrics["mae"].tolist(),
+                    "rmse": metrics["rmse"].tolist()
+                }
+                print(f"  RF   MAE by step:  {np.round(metrics['mae'], 3)}")
+                print(f"  RF   RMSE by step: {np.round(metrics['rmse'], 3)}")
 
             if args.eval_xgb:
                 xgb_adapter = RFAdapter(model_path=Path(args.eval_xgb))
-                mae_by_h = _rollout_model(xgb_adapter, df, start_indices, steps)
-                results.setdefault("xgb", {})[steps] = mae_by_h.tolist()
-                print(f"  XGB  MAE by step: {np.round(mae_by_h, 3)}")
+                metrics = _rollout_model(xgb_adapter, df, start_indices, steps)
+                results.setdefault("xgb", {})[steps] = {
+                    "mae": metrics["mae"].tolist(),
+                    "rmse": metrics["rmse"].tolist()
+                }
+                print(f"  XGB  MAE by step:  {np.round(metrics['mae'], 3)}")
+                print(f"  XGB  RMSE by step: {np.round(metrics['rmse'], 3)}")
 
             # RC+NN
             if args.eval_rcnn:
@@ -396,9 +418,13 @@ def main():
                 nn = ResidualNN(input_dim=nn_cfg["input_dim"], hidden_dims=nn_cfg["hidden_dims"]) 
                 nn.load_state_dict(bundle["nn_state_dict"])
                 rcnn = RCNNAdapterEval(rc_adapter=rc, nn_model=nn, device="cpu", input_mean=bundle["input_mean"], input_std=bundle["input_std"]) 
-                mae_by_h = _rollout_model(rcnn, df, start_indices, steps)
-                results.setdefault("rcnn", {})[steps] = mae_by_h.tolist()
-                print(f"  RC+NN MAE by step: {np.round(mae_by_h, 3)}")
+                metrics = _rollout_model(rcnn, df, start_indices, steps)
+                results.setdefault("rcnn", {})[steps] = {
+                    "mae": metrics["mae"].tolist(),
+                    "rmse": metrics["rmse"].tolist()
+                }
+                print(f"  RC+NN MAE by step:  {np.round(metrics['mae'], 3)}")
+                print(f"  RC+NN RMSE by step: {np.round(metrics['rmse'], 3)}")
 
         # Save results JSON and simple plot per model
         out_json = output_dir / "rollout_metrics.json"
@@ -406,16 +432,22 @@ def main():
             json.dump(results, f, indent=2)
         print(f"\n[INFO] Saved rollout metrics: {out_json}")
 
-        # Plot per-model MAE vs horizon
+        # Plot per-model MAE and RMSE vs horizon
         for model_name, horizons in results.items():
-            for steps, mae_list in horizons.items():
+            for steps, metrics_dict in horizons.items():
+                mae_list = metrics_dict["mae"]
+                rmse_list = metrics_dict["rmse"]
+                
+                # Plot both MAE and RMSE
                 fig, ax = plt.subplots(figsize=(7,4))
-                ax.plot(range(1, steps+1), mae_list, marker='o')
+                ax.plot(range(1, steps+1), mae_list, marker='o', label='MAE')
+                ax.plot(range(1, steps+1), rmse_list, marker='s', label='RMSE')
                 ax.set_xlabel('Step')
-                ax.set_ylabel('MAE (°C)')
-                ax.set_title(f'{model_name.upper()} rollout MAE (K={steps})')
+                ax.set_ylabel('Error (°C)')
+                ax.set_title(f'{model_name.upper()} rollout errors (K={steps})')
+                ax.legend()
                 ax.grid(True, alpha=0.3)
-                save_path = output_dir / f"{model_name}_rollout_mae_k{steps}.png"
+                save_path = output_dir / f"{model_name}_rollout_errors_k{steps}.png"
                 plt.tight_layout()
                 plt.savefig(save_path, dpi=150)
                 plt.close()
@@ -429,9 +461,10 @@ def main():
                 fig, ax = plt.subplots(figsize=(7,4))
                 any_series = False
                 for model_name, horizons in results.items():
-                    mae_list = horizons.get(steps)
-                    if mae_list is None:
+                    metrics_dict = horizons.get(steps)
+                    if metrics_dict is None:
                         continue
+                    mae_list = metrics_dict["mae"]
                     ax.plot(range(1, steps+1), mae_list, marker='o', label=model_name.upper())
                     any_series = True
                 if any_series:
@@ -446,17 +479,41 @@ def main():
                     plt.close()
                     print(f"  Saved: {save_path}")
 
-                # Bar chart: last-step MAE per model
-                labels, values = [], []
+                # Line plot: RMSE vs step for all models
+                fig, ax = plt.subplots(figsize=(7,4))
+                any_series = False
                 for model_name, horizons in results.items():
-                    mae_list = horizons.get(steps)
-                    if mae_list is None:
+                    metrics_dict = horizons.get(steps)
+                    if metrics_dict is None:
+                        continue
+                    rmse_list = metrics_dict["rmse"]
+                    ax.plot(range(1, steps+1), rmse_list, marker='s', label=model_name.upper())
+                    any_series = True
+                if any_series:
+                    ax.set_xlabel('Step')
+                    ax.set_ylabel('RMSE (°C)')
+                    ax.set_title(f'Combined rollout RMSE (K={steps})')
+                    ax.grid(True, alpha=0.3)
+                    ax.legend()
+                    save_path = output_dir / f"combined_rollout_rmse_k{steps}.png"
+                    plt.tight_layout()
+                    plt.savefig(save_path, dpi=150)
+                    plt.close()
+                    print(f"  Saved: {save_path}")
+
+                # Bar chart: last-step MAE per model
+                labels, mae_values, rmse_values = [], [], []
+                for model_name, horizons in results.items():
+                    metrics_dict = horizons.get(steps)
+                    if metrics_dict is None:
                         continue
                     labels.append(model_name.upper())
-                    values.append(float(mae_list[-1]))
+                    mae_values.append(float(metrics_dict["mae"][-1]))
+                    rmse_values.append(float(metrics_dict["rmse"][-1]))
                 if labels:
+                    # MAE bar chart
                     fig, ax = plt.subplots(figsize=(6,4))
-                    ax.bar(labels, values)
+                    ax.bar(labels, mae_values)
                     ax.set_xlabel('Model')
                     ax.set_ylabel('MAE at last step (°C)')
                     ax.set_title(f'Last-step MAE by model (K={steps})')
@@ -466,34 +523,51 @@ def main():
                     plt.savefig(save_path, dpi=150)
                     plt.close()
                     print(f"  Saved: {save_path}")
+                    
+                    # RMSE bar chart
+                    fig, ax = plt.subplots(figsize=(6,4))
+                    ax.bar(labels, rmse_values)
+                    ax.set_xlabel('Model')
+                    ax.set_ylabel('RMSE at last step (°C)')
+                    ax.set_title(f'Last-step RMSE by model (K={steps})')
+                    ax.grid(True, axis='y', alpha=0.3)
+                    save_path = output_dir / f"combined_last_step_rmse_k{steps}.png"
+                    plt.tight_layout()
+                    plt.savefig(save_path, dpi=150)
+                    plt.close()
+                    print(f"  Saved: {save_path}")
 
         # Export CSV summaries
         tidy_rows = []
         last_rows = []
         for model_name, horizons in results.items():
-            for steps, mae_list in horizons.items():
-                for i, mae in enumerate(mae_list, start=1):
+            for steps, metrics_dict in horizons.items():
+                mae_list = metrics_dict["mae"]
+                rmse_list = metrics_dict["rmse"]
+                for i, (mae, rmse) in enumerate(zip(mae_list, rmse_list), start=1):
                     tidy_rows.append({
                         "model": model_name,
                         "horizon": int(steps),
                         "step": int(i),
                         "mae_c": float(mae),
+                        "rmse_c": float(rmse),
                     })
                 last_rows.append({
                     "model": model_name,
                     "horizon": int(steps),
-                    "mae_last_step_c": float(mae_list[-1])
+                    "mae_last_step_c": float(mae_list[-1]),
+                    "rmse_last_step_c": float(rmse_list[-1])
                 })
 
         if tidy_rows:
             tidy_df = pd.DataFrame(tidy_rows)
-            tidy_csv = output_dir / "rollout_mae_tidy.csv"
+            tidy_csv = output_dir / "rollout_metrics_tidy.csv"
             tidy_df.to_csv(tidy_csv, index=False)
             print(f"[INFO] Saved tidy CSV: {tidy_csv}")
 
         if last_rows:
             last_df = pd.DataFrame(last_rows).sort_values(["horizon", "model"])
-            last_csv = output_dir / "rollout_mae_last_step.csv"
+            last_csv = output_dir / "rollout_metrics_last_step.csv"
             last_df.to_csv(last_csv, index=False)
             print(f"[INFO] Saved last-step CSV: {last_csv}")
 
