@@ -18,15 +18,15 @@ env:
   max_steps: 300
   temp_warning: 80.0
   temp_critical: 90.0
-  temp_target: 75.0
-  initial_temp_range: [40.0, 60.0]
+  temp_target: 65.0
+  initial_temp_range: [60.0, 80.0]
   ambient_range: [20.0, 30.0]
   power_range: [100.0, 300.0]
   reward_weights:
     thermal: 10.0
     energy: 0.1
     oscillation: 1.0
-    headroom: 2.0
+    headroom: 0.05
 
 # Safety wrapper
 use_safety: true
@@ -48,7 +48,7 @@ sac:
   gradient_steps: 1
 
 # Training configuration
-total_timesteps: 2000
-checkpoint_freq: 500
+total_timesteps: 200000
+checkpoint_freq: 10000
 normalize_obs: true
 normalize_reward: true

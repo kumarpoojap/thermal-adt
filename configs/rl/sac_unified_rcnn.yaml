@@ -14,15 +14,15 @@ env:
   max_steps: 300
   temp_warning: 80.0
   temp_critical: 90.0
-  temp_target: 75.0
-  initial_temp_range: [80.0, 85.0]
+  temp_target: 65.0
+  initial_temp_range: [60.0, 80.0]
   ambient_range: [20.0, 30.0]
   power_range: [100.0, 300.0]
   reward_weights:
     thermal: 12.0
     energy: 0.4
     oscillation: 2.5
-    headroom: 2.0
+    headroom: 0.05
 
 # Safety wrapper
 use_safety: true
