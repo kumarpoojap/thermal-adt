@@ -1,0 +1,6 @@
+,cumulative_reward,cumulative_reward,mean_fan,mean_fan,warning_entries,critical_entries
+,mean,std,mean,std,sum,sum
+scenario,,,,,,
+baseline,91.34,132.89,25.29,1.13,0,0
+combined_extreme,-6667.58,12092.35,23.46,1.54,0,0
+thermal_high_start,-9125.91,8194.52,22.1,0.26,0,0

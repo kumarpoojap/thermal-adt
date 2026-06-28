@@ -42,3 +42,105 @@ python scripts/evaluation/policy_eval.py \
   --horizon 10 \
   --episodes 10 \
   --output-dir results/policy_eval
+
+python scripts/evaluation/policy_eval.py \
+  --eval mpc_rc mpc_rcnn rl_rc rl_rcnn \
+  --rl-rc-model runs/rl/sac_rc_baseline/checkpoints/sac_170000_steps.zip \
+  --rl-rc-vecnorm runs/rl/sac_rc_baseline/checkpoints/sac_vecnormalize_170000_steps.pkl \
+  --rl-rcnn-model runs/rl/sac_rcnn_hybrid/sac_final.zip \
+  --rl-rcnn-vecnorm runs/rl/sac_rcnn_hybrid/vecnormalize.pkl \
+  --rcnn-bundle models/rc_nn_hybrid.pkl \
+  --horizon 10 \
+  --episodes 10 \
+  --scenarios all \
+  --output-dir results/policy_eval_final
+
+
+python scripts/evaluation/policy_eval.py \
+  --eval rl_rcnn \
+  --rl-rcnn-model runs/rl/sac_rcnn_hybrid/sac_final.zip \
+  --rl-rcnn-vecnorm runs/rl/sac_rcnn_hybrid/vecnormalize.pkl \
+  --rcnn-bundle models/rc_nn_hybrid.pkl \
+  --episodes 5 \
+  --scenarios stress \
+  --output-dir results/policy_eval_ft_stress
+
+#RL training
+python scripts/training/train_sac_unified.py --config configs/rl/sac_unified_rc.yaml
+
+python scripts/training/train_sac_unified.py --config configs/rl/sac_unified_rcnn.yaml
+
+# Plot RC training
+python scripts/analysis/plot_training_curves.py \
+  --run-dir runs/rl/sac_rc_baseline \
+  --output-dir results/training_analysis/rc
+
+# Plot RCNN training
+python scripts/analysis/plot_training_curves.py \
+  --run-dir runs/rl/sac_rcnn_hybrid \
+  --output-dir results/training_analysis/rcnn
+
+# Compare RC vs RCNN
+python scripts/analysis/plot_training_curves.py \
+  --run-dirs runs/rl/sac_rc_baseline runs/rl/sac_rcnn_hybrid \
+  --labels "RL-RC" "RL-RCNN" \
+  --output-dir results/training_analysis/comparison
+
+
+python scripts/evaluation/policy_eval.py --eval mpc_rc mpc_rcnn rl_rc rl_rcnn --rcnn-bundle models/rc_nn_hybrid.pkl --rl-rc-model runs/rl/sac_rc_baseline/sac_final.zip --rl-rc-vecnorm runs/rl/sac_rc_baseline/vecnormalize.pkl --rl-rcnn-model runs/rl/sac_rcnn_hybrid/sac_final.zip --rl-rcnn-vecnorm runs/rl/sac_rcnn_hybrid/vecnormalize.pkl --output-dir results/policy-eval-v2 --episodes 10
+
+python scripts/evaluation/policy_eval.py \
+  --eval mpc_rc mpc_rcnn rl_rc rl_rcnn \
+  --rcnn-bundle models/rc_nn_hybrid.pkl \
+  --rl-rc-model runs/rl/sac_rc_baseline/sac_final.zip \
+  --rl-rc-vecnorm runs/rl/sac_rc_baseline/vecnormalize.pkl \
+  --rl-rcnn-model runs/rl/sac_rcnn_hybrid/sac_final.zip \
+  --rl-rcnn-vecnorm runs/rl/sac_rcnn_hybrid/vecnormalize.pkl \
+  --output-dir results/policy-eval-v2 \
+  --episodes 10 \
+  --plot-mode none
+
+#Combined plots for analysis
+python scripts/evaluation/plot_results.py \
+  --eval-dir results/policy-eval-v2 \
+  --plot-mode combined
+
+# Minimal plots for report
+  python scripts/evaluation/plot_results.py \
+  --eval-dir results/policy-eval-v2 \
+  --plot-mode minimal
+
+
+# Test cross-evaluation on single scenario first
+python scripts/evaluation/cross_eval_robustness.py \
+  --rl-model runs/rl/sac_rc_baseline/sac_final.zip \
+  --rl-vecnorm runs/rl/sac_rc_baseline/vecnormalize.pkl \
+  --train-surrogate rc \
+  --test-surrogate rcnn \
+  --rcnn-bundle models/rc_nn_hybrid.pkl \
+  --scenarios baseline \
+  --episodes 5 \
+  --output-dir results/cross_eval/rl_rc_on_rcnn
+
+python scripts/evaluation/cross_eval_robustness.py \
+  --rl-model runs/rl/sac_rc_baseline/sac_final.zip \
+  --rl-vecnorm runs/rl/sac_rc_baseline/vecnormalize.pkl \
+  --train-surrogate rc \
+  --test-surrogate rcnn \
+  --rcnn-bundle models/rc_nn_hybrid.pkl \
+  --scenarios thermal_high_start combined_extreme \
+  --episodes 10 \
+  --output-dir results/cross_eval/rl_rc_on_rcnn
+
+python scripts/evaluation/cross_eval_robustness.py \
+  --rl-model runs/rl/sac_rcnn_hybrid/sac_final.zip \
+  --rl-vecnorm runs/rl/sac_rcnn_hybrid/vecnormalize.pkl \
+  --train-surrogate rcnn \
+  --test-surrogate rc \
+  --scenarios baseline thermal_high_start combined_extreme \
+  --episodes 10 \
+  --output-dir results/cross_eval/rl_rcnn_on_rc
+
+python scripts/analysis/plot_cross_eval_simple.py \
+  --cross-eval-dirs results/cross_eval/rl_rc_on_rcnn results/cross_eval/rl_rcnn_on_rc \
+  --output-dir results/cross_eval/analysis

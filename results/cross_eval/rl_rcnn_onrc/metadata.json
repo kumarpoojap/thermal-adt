@@ -1,0 +1,12 @@
+{
+  "train_surrogate": "rcnn",
+  "test_surrogate": "rc",
+  "rl_model": "runs/rl/sac_rcnn_hybrid/sac_final.zip",
+  "scenarios": [
+    "baseline",
+    "thermal_high_start",
+    "combined_extreme"
+  ],
+  "episodes_per_scenario": 10,
+  "total_episodes": 30
+}

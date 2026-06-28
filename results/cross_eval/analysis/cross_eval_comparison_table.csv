@@ -1,0 +1,6 @@
+train_surrogate,test_surrogate,scenario,reward_mean,reward_std,fan_mean,fan_std,warning_total,critical_total,combination
+rc,rcnn,combined_extreme,-395.8580585002899,700.5478459108331,0.0,0.0,0,0,rc→rcnn
+rc,rcnn,thermal_high_start,201.50738296508788,309.99934923419704,0.0,0.0,0,0,rc→rcnn
+rcnn,rc,baseline,35.698977613449095,92.67075017435599,0.0,0.0,0,0,rcnn→rc
+rcnn,rc,combined_extreme,-7058.819002723694,10930.783083848439,0.0,0.0,0,0,rcnn→rc
+rcnn,rc,thermal_high_start,-7893.1130645751955,12463.691280942892,0.0,0.0,0,0,rcnn→rc
