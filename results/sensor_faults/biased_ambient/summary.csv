@@ -1,0 +1,7 @@
+,cumulative_reward,cumulative_reward,mean_temp,max_temp,mean_fan,mean_fault_magnitude,warning_entries,critical_entries
+,mean,std,mean,max,mean,mean,sum,sum
+controller,,,,,,,,
+mpc_rc,107.94,143.56,64.9,73.07,59.97,5.0,0,0
+mpc_rcnn,862.18,334.62,50.57,72.7,60.0,5.0,0,0
+rl_rc,77.71,112.45,66.15,77.79,31.01,5.0,0,0
+rl_rcnn,857.59,275.08,50.89,79.63,26.15,5.0,0,0

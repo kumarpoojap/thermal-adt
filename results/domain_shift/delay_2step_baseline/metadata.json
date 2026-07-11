@@ -1,0 +1,16 @@
+{
+  "perturbation": "action_delay",
+  "shift_deg": null,
+  "spike_factor": null,
+  "delay_steps": 2,
+  "controllers": [
+    "mpc_rc",
+    "mpc_rcnn",
+    "rl_rc",
+    "rl_rcnn"
+  ],
+  "scenarios": [
+    "baseline"
+  ],
+  "episodes_per_scenario": 10
+}

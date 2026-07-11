@@ -1,0 +1,5 @@
+controller,Baseline Reward,1-step (%),2-step (%)
+mpc_rc,89.0,16.7,16.6
+mpc_rcnn,1031.0,2.8,2.8
+rl_rc,85.0,-14.2,-13.2
+rl_rcnn,944.0,3.4,3.6

@@ -1,0 +1,7 @@
+,,cumulative_reward,cumulative_reward,mean_fan,mean_fan,warning_entries,critical_entries
+,,mean,std,mean,std,sum,sum
+controller,scenario,,,,,,
+mpc_rc,baseline,103.8,134.08,59.9,0.1,0,0
+mpc_rcnn,baseline,1059.56,68.96,59.93,0.01,0,0
+rl_rc,baseline,73.73,100.47,29.35,0.38,0,0
+rl_rcnn,baseline,978.06,72.69,27.46,0.03,0,0
